@@ -171,7 +171,7 @@ enum class NavTab(val title: String, val icon: String) {
 
 data class HttpResult(val code: Int, val body: String)
 data class AppItem(val id: String, val title: String, val canClose: Boolean, val running: Boolean)
-data class WindowItem(val hwnd: Long, val title: String, val process: String, val active: Boolean, val minimized: Boolean)
+data class WindowItem(val hwnd: Long, val title: String, val process: String, val path: String, val active: Boolean, val minimized: Boolean)
 data class PcStatusSnapshot(val apps: List<AppItem>, val activeWindow: String, val ramPercent: Int, val shutdownRemainingSec: Int, val shutdownActive: Boolean)
 data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val hash: String, val size: Long)
 data class OtaCheckResult(val update: UpdateInfo?, val message: String)
@@ -407,6 +407,7 @@ fun parseOpenWindows(json: String): List<WindowItem> {
             hwnd = o.getLong("hwnd"),
             title = o.getString("title"),
             process = o.optString("process", ""),
+            path = o.optString("path", ""),
             active = o.optBoolean("active", false),
             minimized = o.optBoolean("minimized", false)
         )
@@ -726,13 +727,15 @@ fun PcControlMainApp(
     }
 
     fun submitNewApp() {
-        if (newAppTitle.isBlank() || newAppPath.isBlank()) {
-            status = "Заполни название и путь"
+        val title = newAppTitle.trim()
+        val launch = if (newAppPath.isNotBlank()) newAppPath.trim() else title
+        if (title.isBlank() && launch.isBlank()) {
+            status = "Введите название программы"
             return
         }
         val payload = JSONObject().apply {
-            put("title", newAppTitle.trim())
-            put("launch", newAppPath.trim())
+            put("title", title.ifEmpty { launch })
+            put("launch", launch)
             if (newAppProcess.isNotBlank()) put("process", newAppProcess.trim())
             put("force", newAppForce)
         }.toString()
@@ -744,6 +747,32 @@ fun PcControlMainApp(
             newAppPath = ""
             newAppProcess = ""
             newAppForce = false
+            refresh()
+        }
+    }
+
+    fun startCustomTimer(minutes: Int, action: String) {
+        val payload = JSONObject().apply {
+            put("minutes", minutes)
+            put("action", action)
+        }.toString()
+        scope.launch {
+            status = command(host.trim(), token.trim(), "/timer", "POST", payload)
+            delay(300)
+            refresh()
+        }
+    }
+
+    fun quickAddAppFromWindow(win: WindowItem) {
+        val cleanTitle = win.title.split("-").first().trim().ifEmpty { win.process.replace(".exe", "").capitalize() }
+        val payload = JSONObject().apply {
+            put("title", cleanTitle)
+            put("launch", win.path.ifEmpty { win.process })
+            put("process", win.process)
+        }.toString()
+        scope.launch {
+            status = command(host.trim(), token.trim(), "/apps/add", "POST", payload)
+            delay(300)
             refresh()
         }
     }
@@ -1310,16 +1339,35 @@ fun PcControlMainApp(
                     }
                 }
 
-                // Громкость с пресетами
+                // Громкость: только удобная регулировочная полоса + процент и кнопка аудиовыхода
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val vol = volumeSlider.roundToInt()
+                        val volIcon = when {
+                            vol == 0 -> "🔇"
+                            vol <= 30 -> "🔈"
+                            vol <= 70 -> "🔉"
+                            else -> "🔊"
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Громкость звука", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("${volumeSlider.roundToInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(volIcon, fontSize = 24.sp)
+                                Text("Громкость звука", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("$vol%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                                OutlinedButton(
+                                    onClick = { run("/media/audio_output", refreshAfter = false) },
+                                    contentPadding = KeyPadding,
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("🎧 Выход")
+                                }
+                            }
                         }
 
                         Slider(
@@ -1327,29 +1375,12 @@ fun PcControlMainApp(
                             onValueChange = { volumeSlider = it },
                             onValueChangeFinished = { sendExactVolume(volumeSlider.roundToInt()) },
                             valueRange = 0f..100f,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                         )
-
-                        // Быстрые пресеты громкости
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("🔇 Мут") { run("/media/vol_mute", refreshAfter = false) }
-                            CoolButton("15% 🌙") { sendExactVolume(15) }
-                            CoolButton("40%") { sendExactVolume(40) }
-                            CoolButton("75%") { sendExactVolume(75) }
-                            CoolButton("100% 🔊") { sendExactVolume(100) }
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("−10%") { run("/media/vol_down_10", refreshAfter = false) }
-                            CoolButton("Тише") { run("/media/vol_down", refreshAfter = false) }
-                            CoolButton("Громче") { run("/media/vol_up", refreshAfter = false) }
-                            CoolButton("+10%") { run("/media/vol_up_10", refreshAfter = false) }
-                            CoolButton("🎧 Выход") { run("/media/audio_output", refreshAfter = false) }
-                        }
                     }
                 }
 
-                // Пульт плеера и скорость YouTube
+                // Пульт плеера и YouTube (чистый вид без кнопок скорости и субтитров)
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Пульт плеера и YouTube", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -1366,13 +1397,6 @@ fun PcControlMainApp(
                             CoolButton("⛶ Полный экран", weight = 1.2f) { run("/media/yt_fullscreen", refreshAfter = false) }
                             CoolButton("+5с") { run("/media/yt_forward", refreshAfter = false) }
                             CoolButton("+10с ⏩") { run("/media/yt_forward_10", refreshAfter = false) }
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("⚡ Скорость −") { run("/media/yt_speed_down", refreshAfter = false) }
-                            CoolButton("💬 Субтитры (C)") { run("/media/yt_subtitles", refreshAfter = false) }
-                            CoolButton("🎬 Кинотеатр (T)") { run("/media/yt_theater", refreshAfter = false) }
-                            CoolButton("Скорость + ⚡") { run("/media/yt_speed_up", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1420,8 +1444,8 @@ fun PcControlMainApp(
                                         color = if (win.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("На экран") }
-                                OutlinedButton(onClick = { sendWindowAction(win.hwnd, "minimize") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("—") }
+                                Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Экран") }
+                                OutlinedButton(onClick = { quickAddAppFromWindow(win) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("+ В софт") }
                                 OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
                             }
                         }
@@ -1537,14 +1561,47 @@ fun PcControlMainApp(
                     }
                 }
 
+                // Таймер сна и выключения: удобный ручной ввод минут + быстрые кнопки
+                var timerMinutesInput by remember { mutableStateOf("30") }
+
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Таймеры сна и выключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Таймер сна и выключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                        OutlinedTextField(
+                            value = timerMinutesInput,
+                            onValueChange = { timerMinutesInput = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Время в минутах (например: 45)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Быстрые прибавки к таймеру, чтобы не открывать клавиатуру
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("⏱ 15 мин") { run("/shutdown_15m", refreshAfter = true) }
-                            CoolButton("⏱ 30 мин") { run("/shutdown_30m", refreshAfter = true) }
-                            CoolButton("⏱ 60 мин") { run("/shutdown_60m", refreshAfter = true) }
-                            CoolButton("⏱ 2 часа") { run("/shutdown_120m", refreshAfter = true) }
+                            CoolButton("+15м") {
+                                val cur = timerMinutesInput.toIntOrNull() ?: 0
+                                timerMinutesInput = (cur + 15).toString()
+                            }
+                            CoolButton("+30м") {
+                                val cur = timerMinutesInput.toIntOrNull() ?: 0
+                                timerMinutesInput = (cur + 30).toString()
+                            }
+                            CoolButton("+60м") {
+                                val cur = timerMinutesInput.toIntOrNull() ?: 0
+                                timerMinutesInput = (cur + 60).toString()
+                            }
+                            CoolButton("Сброс") { timerMinutesInput = "30" }
+                        }
+
+                        val chosenMinutes = timerMinutesInput.toIntOrNull() ?: 30
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CoolButton("⏱ Выключить через $chosenMinutes м", accentColor = Color(0xFFDC2626), filled = true) {
+                                startCustomTimer(chosenMinutes, "shutdown")
+                            }
+                            CoolButton("💤 Сон через $chosenMinutes м", accentColor = Color(0xFF7C3AED), filled = true) {
+                                startCustomTimer(chosenMinutes, "sleep")
+                            }
                         }
                     }
                 }
