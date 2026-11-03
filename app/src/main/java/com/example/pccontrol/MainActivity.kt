@@ -246,16 +246,19 @@ suspend fun fetchScreenBitmap(
             conn.readTimeout = 1500
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
-            conn.setRequestProperty("Cache-Control", "no-cache")
-            conn.setRequestProperty("Pragma", "no-cache")
-            if (conn.responseCode != 200) return@withContext null
+            conn.setRequestProperty("Connection", "keep-alive")
+            if (conn.responseCode != 200) {
+                conn.errorStream?.close()
+                return@withContext null
+            }
             val bytes = conn.inputStream.use { it.readBytes() }
             if (bytes.isEmpty()) return@withContext null
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            val opts = BitmapFactory.Options().apply {
+                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
         } catch (_: Exception) {
             null
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -302,10 +305,23 @@ suspend fun checkOtaUpdate(context: Context, host: String, token: String, instal
         }
     }
 
+fun computeFileSha256(file: File): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buf = ByteArray(16384)
+        var read: Int
+        while (input.read(buf).also { read = it } != -1) {
+            digest.update(buf, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
 suspend fun downloadAndInstallApk(
     context: Context,
     host: String,
     token: String,
+    expectedHash: String = "",
     onProgress: (Float) -> Unit
 ): String =
     withContext(Dispatchers.IO) {
@@ -350,6 +366,15 @@ suspend fun downloadAndInstallApk(
                             onProgress(totalDownloaded.toFloat() / totalSize.toFloat())
                         }
                     }
+                }
+            }
+
+            // Проверка целостности SHA-256
+            if (expectedHash.isNotBlank()) {
+                val computed = computeFileSha256(apkFile)
+                if (!computed.equals(expectedHash.trim(), ignoreCase = true)) {
+                    apkFile.delete()
+                    return@withContext "Ошибка: хеш файла не совпадает! Ожидался $expectedHash, получен $computed"
                 }
             }
 
@@ -529,6 +554,7 @@ fun PcControlMainApp(
     var openWindows by remember { mutableStateOf<List<WindowItem>>(emptyList()) }
     var volumeSlider by remember { mutableFloatStateOf(40f) }
     var hasInitializedVolume by remember { mutableStateOf(false) }
+    var isAdjustingVolume by remember { mutableStateOf(false) }
     var videoUrl by remember { mutableStateOf("") }
     var textToType by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
@@ -588,7 +614,7 @@ fun PcControlMainApp(
                 ramPercent = snap.ramPercent
                 shutdownRemainingSec = snap.shutdownRemainingSec
                 shutdownActive = snap.shutdownActive || (snap.shutdownRemainingSec > 0)
-                if (!hasInitializedVolume && snap.volume >= 0) {
+                if (!isAdjustingVolume && snap.volume >= 0) {
                     volumeSlider = snap.volume.toFloat()
                     hasInitializedVolume = true
                 }
@@ -805,12 +831,16 @@ fun PcControlMainApp(
         isDownloadingUpdate = true
         downloadProgress = 0f
         scope.launch {
-            status = downloadAndInstallApk(context, host.trim(), token.trim()) { progress ->
+            val res = downloadAndInstallApk(context, host.trim(), token.trim(), update.hash) { progress ->
                 downloadProgress = progress
             }
-            if (update.hash.isNotEmpty()) {
-                installedApkHash = update.hash
-                prefs.edit().putString("installed_apk_hash", update.hash).apply()
+            status = res
+            // Сохраняем хеш ТОЛЬКО если установщик реально успешно запущен
+            if (res.startsWith("Запуск установщика")) {
+                if (update.hash.isNotEmpty()) {
+                    installedApkHash = update.hash
+                    prefs.edit().putString("installed_apk_hash", update.hash).apply()
+                }
             }
             isDownloadingUpdate = false
             otaUpdateInfo = null
@@ -848,51 +878,78 @@ fun PcControlMainApp(
         if (currentTab == NavTab.APPS) refresh()
     }
 
-    // Цикл трансляции экрана (активен ТОЛЬКО когда вкладка Экран, нажата кнопка И приложение на переднем плане)
+    // Цикл трансляции экрана с динамической компенсацией задержек (идеальная плавность кадров)
     LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
+                val t0 = System.currentTimeMillis()
                 val w = when {
-                    streamHd -> 1366
+                    streamHd -> 1280
                     streamFps == 90 -> 640
                     streamFps == 60 -> 720
                     else -> 854
                 }
                 val q = when {
-                    streamHd -> 72
-                    streamFps == 90 -> 42
+                    streamHd -> 68
+                    streamFps == 90 -> 40
                     streamFps == 60 -> 48
-                    else -> 56
+                    else -> 55
                 }
                 val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
                 if (bmp != null) {
                     screenBitmap = bmp
                     pcOnline = true
                 }
-                val frameDelay = when (streamFps) {
-                    90 -> 10L
-                    60 -> 16L
+                val targetInterval = when {
+                    streamHd -> 90L
+                    streamFps == 90 -> 11L
+                    streamFps == 60 -> 16L
                     else -> 33L
                 }
-                delay(if (streamHd) 120L else frameDelay)
+                val elapsed = System.currentTimeMillis() - t0
+                val waitMs = (targetInterval - elapsed).coerceAtLeast(1L)
+                delay(waitMs)
             }
         }
     }
 
+    // Высокоскоростной цикл мыши (UDP 125 Гц для плавного движения + HTTP fallback)
     LaunchedEffect(currentTab, host, token) {
-        while (currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-            val dx = accDx.roundToInt()
-            val dy = accDy.roundToInt()
-            if (dx != 0 || dy != 0) {
-                accDx -= dx
-                accDy -= dy
-                val payload = """{"action":"move","dx":$dx,"dy":$dy}"""
-                try {
-                    http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 800)
-                } catch (_: Exception) {
+        activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val udpSocket = try { DatagramSocket() } catch (_: Exception) { null }
+            var resolvedIp: InetAddress? = null
+            var lastResolvedHost = ""
+            while (currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
+                val dx = accDx.roundToInt()
+                val dy = accDy.roundToInt()
+                if (dx != 0 || dy != 0) {
+                    accDx -= dx
+                    accDy -= dy
+                    var sentUdp = false
+                    if (udpSocket != null) {
+                        try {
+                            if (host != lastResolvedHost || resolvedIp == null) {
+                                resolvedIp = withContext(Dispatchers.IO) { InetAddress.getByName(host.trim()) }
+                                lastResolvedHost = host
+                            }
+                            val pkt = "${token.trim()}:m:$dx,$dy".toByteArray(Charsets.UTF_8)
+                            val packet = DatagramPacket(pkt, pkt.size, resolvedIp, PORT)
+                            withContext(Dispatchers.IO) { udpSocket.send(packet) }
+                            sentUdp = true
+                        } catch (_: Exception) {
+                            sentUdp = false
+                        }
+                    }
+                    if (!sentUdp) {
+                        val payload = """{"action":"move","dx":$dx,"dy":$dy}"""
+                        try {
+                            http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 400)
+                        } catch (_: Exception) {
+                        }
+                    }
                 }
+                delay(8L) // 125 Гц — игровой плавный опрос без рывков
             }
-            delay(15L)
         }
     }
 
@@ -1169,13 +1226,13 @@ fun PcControlMainApp(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
-                                            .pointerInput(host, token, directTapMode, streamAllMonitors) {
+                                            .pointerInput(host, token, directTapMode, streamAllMonitors, streamZoom) {
                                                 detectTapGestures(
                                                     onTap = { offset ->
                                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                         if (directTapMode && size.width > 0 && size.height > 0) {
-                                                            val nx = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                                            val ny = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                            val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                                            val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
                                                             sendMouseAction("abs_click", nx = nx, ny = ny)
                                                         } else {
                                                             sendMouseAction("left")
@@ -1184,8 +1241,8 @@ fun PcControlMainApp(
                                                     onDoubleTap = { offset ->
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         if (directTapMode && size.width > 0 && size.height > 0) {
-                                                            val nx = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                                            val ny = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                            val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                                            val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
                                                             sendMouseAction("abs_double", nx = nx, ny = ny)
                                                         } else {
                                                             sendMouseAction("double")
@@ -1194,8 +1251,8 @@ fun PcControlMainApp(
                                                     onLongPress = { offset ->
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         if (directTapMode && size.width > 0 && size.height > 0) {
-                                                            val nx = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                                            val ny = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                            val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                                            val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
                                                             sendMouseAction("abs_right", nx = nx, ny = ny)
                                                         } else {
                                                             sendMouseAction("right")
@@ -1401,8 +1458,14 @@ fun PcControlMainApp(
 
                         Slider(
                             value = volumeSlider,
-                            onValueChange = { volumeSlider = it },
-                            onValueChangeFinished = { sendExactVolume(volumeSlider.roundToInt()) },
+                            onValueChange = {
+                                isAdjustingVolume = true
+                                volumeSlider = it
+                            },
+                            onValueChangeFinished = {
+                                isAdjustingVolume = false
+                                sendExactVolume(volumeSlider.roundToInt())
+                            },
                             valueRange = 0f..100f,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                         )
