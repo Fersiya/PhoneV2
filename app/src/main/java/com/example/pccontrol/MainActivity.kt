@@ -662,6 +662,13 @@ fun PcControlMainApp(
         }
     }
 
+
+    fun wake() {
+        save()
+        status = "Отправляю…"
+        scope.launch { status = sendMagicPacket(mac) }
+    }
+
     fun startOtaUpdate() {
         val update = otaUpdateInfo ?: return
         isDownloadingUpdate = true
