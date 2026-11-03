@@ -153,6 +153,7 @@ data class AppItem(val id: String, val title: String, val canClose: Boolean, val
 data class WindowItem(val hwnd: Long, val title: String, val process: String, val active: Boolean, val minimized: Boolean)
 data class PcStatusSnapshot(val apps: List<AppItem>, val activeWindow: String, val ramPercent: Int, val shutdownRemainingSec: Int, val shutdownActive: Boolean)
 data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val size: Long)
+data class OtaCheckResult(val update: UpdateInfo?, val message: String)
 
 suspend fun http(
     host: String,
@@ -213,23 +214,37 @@ suspend fun fetchScreenBitmap(
         }
     }
 
-suspend fun checkOtaUpdate(host: String, token: String): UpdateInfo? =
+suspend fun checkOtaUpdate(host: String, token: String): OtaCheckResult =
     withContext(Dispatchers.IO) {
         try {
-            val r = http(host, token, "/update/check", "GET", timeoutMs = 2500)
+            val r = http(host, token, "/update/check", "GET", timeoutMs = 3000)
+            if (r.code == 404) {
+                return@withContext OtaCheckResult(null, "Ошибка 404: перезапусти server.py на ПК (сними pythonw.exe в диспетчере задач)")
+            }
+            if (r.code == 401) {
+                return@withContext OtaCheckResult(null, "Ошибка 401: неверный токен подключения")
+            }
             if (r.code == 200) {
                 val o = JSONObject(r.body)
                 val avail = o.optBoolean("available", false)
+                val dir = o.optString("updatesDir", "")
+                if (!avail) {
+                    val dirMsg = if (dir.isNotEmpty()) " (папка: $dir)" else ""
+                    return@withContext OtaCheckResult(null, "На ПК в папке updates нет .apk файлов$dirMsg")
+                }
                 val vCode = o.optLong("versionCode", 0L)
                 val vName = o.optString("versionName", "")
                 val size = o.optLong("size", 0L)
-                if (avail && vCode > CURRENT_APP_VERSION_CODE) {
-                    return@withContext UpdateInfo(true, vCode, vName, size)
+                val fn = o.optString("filename", "app-debug.apk")
+                if (vCode > CURRENT_APP_VERSION_CODE) {
+                    return@withContext OtaCheckResult(UpdateInfo(true, vCode, vName, size), "Найдено обновление: $fn ✔")
+                } else {
+                    return@withContext OtaCheckResult(null, "Файл $fn найден, но код ($vCode) <= текущему ($CURRENT_APP_VERSION_CODE)")
                 }
             }
-            null
-        } catch (_: Exception) {
-            null
+            OtaCheckResult(null, "Ответ ПК: ${r.code} (${r.body})")
+        } catch (e: Exception) {
+            OtaCheckResult(null, "ПК недоступен (${e.javaClass.simpleName})")
         }
     }
 
@@ -266,6 +281,19 @@ suspend fun downloadAndInstallApk(
                             onProgress(totalDownloaded.toFloat() / totalSize.toFloat())
                         }
                     }
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    withContext(Dispatchers.Main) {
+                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(intent)
+                    }
+                    return@withContext "Разрешите установку приложений для Пульт ПК и нажмите 'Обновить' ещё раз"
                 }
             }
 
@@ -684,7 +712,8 @@ fun PcControlMainApp(
 
     LaunchedEffect(host, token) {
         if (host.isNotBlank() && token.isNotBlank()) {
-            otaUpdateInfo = checkOtaUpdate(host.trim(), token.trim())
+            val res = checkOtaUpdate(host.trim(), token.trim())
+            otaUpdateInfo = res.update
         }
     }
 
@@ -797,7 +826,7 @@ fun PcControlMainApp(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = currentTab.title,
+                    text = "Пульт ПК • ${currentTab.title}",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -1432,9 +1461,10 @@ fun PcControlMainApp(
                         Button(
                             onClick = {
                                 scope.launch {
-                                    val u = checkOtaUpdate(host.trim(), token.trim())
-                                    otaUpdateInfo = u
-                                    status = if (u != null) "Найдено обновление!" else "У вас последняя версия"
+                                    status = "Проверяю папку updates на ПК…"
+                                    val res = checkOtaUpdate(host.trim(), token.trim())
+                                    otaUpdateInfo = res.update
+                                    status = res.message
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
