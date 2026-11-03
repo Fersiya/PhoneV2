@@ -724,12 +724,12 @@ fun PcControlScreen(
         while (showScreenStream && !streamPaused && host.isNotBlank() && token.isNotBlank()) {
             val w = when {
                 streamHd -> 1366
-                streamSmoothFps -> 720  # Оптимально для высокой частоты кадров
+                streamSmoothFps -> 720  // Оптимально для высокой частоты кадров
                 else -> 854
             }
             val q = when {
                 streamHd -> 72
-                streamSmoothFps -> 48  # Меньше вес -> ультра-быстрая передача по Wi-Fi
+                streamSmoothFps -> 48  // Меньше вес -> ультра-быстрая передача по Wi-Fi
                 else -> 55
             }
             val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
@@ -1298,7 +1298,7 @@ fun PcControlScreen(
         )
         AnimatedVisibility(visible = showPower) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = { wake() }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                Button(onClick = { scope.launch { status = sendMagicPacket(mac) } }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                     Text("Включить ПК (Wake-on-LAN)")
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
