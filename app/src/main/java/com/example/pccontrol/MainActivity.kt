@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -15,7 +16,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +41,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -53,7 +54,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,9 +109,11 @@ class MainActivity : ComponentActivity() {
         extractSharedUrl(intent)?.let { sharedUrlState.value = it }
 
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            MaterialTheme(colorScheme = CyberDarkPalette) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     PcControlMainApp(
                         incomingSharedUrl = sharedUrlState.value,
                         onSharedUrlConsumed = { sharedUrlState.value = null }
@@ -133,11 +135,30 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val CURRENT_APP_VERSION_CODE = 2
-private const val CURRENT_APP_VERSION_NAME = "2.0"
+// Современная палитра: глубокий Midnight Navy с акцентами Electric Cyan и Neon Violet
+private val CyberDarkPalette = darkColorScheme(
+    primary = Color(0xFF00E5FF),          // Неоновый циан
+    onPrimary = Color(0xFF00363D),
+    primaryContainer = Color(0xFF004F58),
+    onPrimaryContainer = Color(0xFFB2F5EA),
+    secondary = Color(0xFFA78BFA),        // Фиолетовый
+    onSecondary = Color(0xFF2E1065),
+    secondaryContainer = Color(0xFF3B1E78),
+    onSecondaryContainer = Color(0xFFDDD6FE),
+    tertiary = Color(0xFF10B981),         // Изумрудно-зеленый (статус онлайн)
+    background = Color(0xFF0A0F1D),       // Глубокий темный фон
+    surface = Color(0xFF111827),          // Поверхность карточек
+    surfaceVariant = Color(0xFF1F2937),   // Контейнеры
+    onSurface = Color(0xFFF9FAFB),        // Четкий белый текст
+    onSurfaceVariant = Color(0xFF9CA3AF), // Вспомогательный серый текст
+    outline = Color(0xFF374151),          // Тонкие рамки
+    error = Color(0xFFEF4444),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color(0xFFFEE2E2)
+)
+
 private const val PORT = 8765
 private const val POLL_INTERVAL_MS = 2500L
-private const val MOUSE_SENSITIVITY = 1.6f
 private val KeyPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp)
 
 enum class NavTab(val title: String, val icon: String) {
@@ -152,8 +173,27 @@ data class HttpResult(val code: Int, val body: String)
 data class AppItem(val id: String, val title: String, val canClose: Boolean, val running: Boolean)
 data class WindowItem(val hwnd: Long, val title: String, val process: String, val active: Boolean, val minimized: Boolean)
 data class PcStatusSnapshot(val apps: List<AppItem>, val activeWindow: String, val ramPercent: Int, val shutdownRemainingSec: Int, val shutdownActive: Boolean)
-data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val size: Long)
+data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val hash: String, val size: Long)
 data class OtaCheckResult(val update: UpdateInfo?, val message: String)
+
+fun getInstalledVersionCode(context: Context): Long =
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toLong()
+        }
+    } catch (_: Exception) {
+        3L
+    }
+
+fun getInstalledVersionName(context: Context): String =
+    try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.1"
+    } catch (_: Exception) {
+        "2.1"
+    }
 
 suspend fun http(
     host: String,
@@ -214,12 +254,12 @@ suspend fun fetchScreenBitmap(
         }
     }
 
-suspend fun checkOtaUpdate(host: String, token: String): OtaCheckResult =
+suspend fun checkOtaUpdate(context: Context, host: String, token: String, installedHash: String): OtaCheckResult =
     withContext(Dispatchers.IO) {
         try {
             val r = http(host, token, "/update/check", "GET", timeoutMs = 3000)
             if (r.code == 404) {
-                return@withContext OtaCheckResult(null, "Ошибка 404: перезапусти server.py на ПК (сними pythonw.exe в диспетчере задач)")
+                return@withContext OtaCheckResult(null, "Ошибка 404: перезапустите server.py на ПК")
             }
             if (r.code == 401) {
                 return@withContext OtaCheckResult(null, "Ошибка 401: неверный токен подключения")
@@ -230,19 +270,28 @@ suspend fun checkOtaUpdate(host: String, token: String): OtaCheckResult =
                 val dir = o.optString("updatesDir", "")
                 if (!avail) {
                     val dirMsg = if (dir.isNotEmpty()) " (папка: $dir)" else ""
-                    return@withContext OtaCheckResult(null, "На ПК в папке updates нет .apk файлов$dirMsg")
+                    return@withContext OtaCheckResult(null, "На ПК в папке updates нет .apk$dirMsg")
                 }
                 val vCode = o.optLong("versionCode", 0L)
                 val vName = o.optString("versionName", "")
+                val hash = o.optString("hash", "")
                 val size = o.optLong("size", 0L)
                 val fn = o.optString("filename", "app-debug.apk")
-                if (vCode > CURRENT_APP_VERSION_CODE) {
-                    return@withContext OtaCheckResult(UpdateInfo(true, vCode, vName, size), "Найдено обновление: $fn ✔")
+
+                // Защита от бесконечного предложения обновиться:
+                // Если хеш совпадает с уже установленным файлом — обновление НЕ нужно!
+                if (hash.isNotEmpty() && hash == installedHash) {
+                    return@withContext OtaCheckResult(null, "Установлена последняя версия ($fn) ✔")
+                }
+
+                val currentCode = getInstalledVersionCode(context)
+                if (vCode > currentCode || (hash.isNotEmpty() && hash != installedHash)) {
+                    return@withContext OtaCheckResult(UpdateInfo(true, vCode, vName, hash, size), "Найдено обновление: $fn ✔")
                 } else {
-                    return@withContext OtaCheckResult(null, "Файл $fn найден, но код ($vCode) <= текущему ($CURRENT_APP_VERSION_CODE)")
+                    return@withContext OtaCheckResult(null, "Установлена актуальная версия ✔")
                 }
             }
-            OtaCheckResult(null, "Ответ ПК: ${r.code} (${r.body})")
+            OtaCheckResult(null, "Ответ ПК: ${r.code}")
         } catch (e: Exception) {
             OtaCheckResult(null, "ПК недоступен (${e.javaClass.simpleName})")
         }
@@ -256,6 +305,19 @@ suspend fun downloadAndInstallApk(
 ): String =
     withContext(Dispatchers.IO) {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    withContext(Dispatchers.Main) {
+                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(intent)
+                    }
+                    return@withContext "Разрешите установку из этого источника и нажмите 'Обновить' ещё раз"
+                }
+            }
+
             val conn = URL("http://$host:$PORT/update/download").openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 5000
@@ -263,7 +325,7 @@ suspend fun downloadAndInstallApk(
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
             if (conn.responseCode != 200) {
-                return@withContext "Ошибка: код ${conn.responseCode}"
+                return@withContext "Ошибка загрузки: код ${conn.responseCode}"
             }
             val totalSize = conn.contentLength
             val apkFile = File(context.cacheDir, "pc-control-update.apk")
@@ -284,19 +346,6 @@ suspend fun downloadAndInstallApk(
                 }
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!context.packageManager.canRequestPackageInstalls()) {
-                    withContext(Dispatchers.Main) {
-                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                            data = Uri.parse("package:${context.packageName}")
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        context.startActivity(intent)
-                    }
-                    return@withContext "Разрешите установку приложений для Пульт ПК и нажмите 'Обновить' ещё раз"
-                }
-            }
-
             val apkUri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -305,9 +354,10 @@ suspend fun downloadAndInstallApk(
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
             context.startActivity(installIntent)
-            "Запуск обновления…"
+            "Запуск установщика Android…"
         } catch (e: Exception) {
             "Ошибка: ${e.localizedMessage ?: e.javaClass.simpleName}"
         }
@@ -404,10 +454,11 @@ suspend fun sendMagicPacket(mac: String): String =
     }
 
 @Composable
-private fun RowScope.KeyButton(
+private fun RowScope.CoolButton(
     text: String,
     weight: Float = 1f,
     filled: Boolean = false,
+    accentColor: Color? = null,
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
@@ -419,14 +470,20 @@ private fun RowScope.KeyButton(
         Button(
             onClick = trigger,
             contentPadding = KeyPadding,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accentColor ?: MaterialTheme.colorScheme.primary,
+                contentColor = if (accentColor != null) Color.White else MaterialTheme.colorScheme.onPrimary
+            ),
             modifier = Modifier.weight(weight)
-        ) { Text(text, textAlign = TextAlign.Center) }
+        ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     } else {
         OutlinedButton(
             onClick = trigger,
             contentPadding = KeyPadding,
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier.weight(weight)
-        ) { Text(text, textAlign = TextAlign.Center) }
+        ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp) }
     }
 }
 
@@ -444,12 +501,14 @@ fun PcControlMainApp(
     var host by remember { mutableStateOf(prefs.getString("host", "") ?: "") }
     var token by remember { mutableStateOf(prefs.getString("token", "") ?: "") }
     var mac by remember { mutableStateOf(prefs.getString("mac", "") ?: "") }
+    var installedApkHash by remember { mutableStateOf(prefs.getString("installed_apk_hash", "") ?: "") }
+    var mouseSensitivity by remember { mutableFloatStateOf(prefs.getFloat("mouse_sens", 1.6f)) }
 
-    // Текущая вкладка нижней навигации
+    // Текущая вкладка навигации
     var currentTab by remember { mutableStateOf(if (host.isBlank() || token.isBlank()) NavTab.SETTINGS else NavTab.SCREEN) }
 
-    // Состояния трансляции экрана
-    var isStreamingActive by remember { mutableStateOf(false) } // ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНА!
+    // Трансляция экрана
+    var isStreamingActive by remember { mutableStateOf(false) } // ПО УМОЛЧАНИЮ СТРОГО ВЫКЛЮЧЕНА
     var streamFps by remember { mutableIntStateOf(60) } // 30, 60, 90
     var streamHd by remember { mutableStateOf(false) }
     var streamAllMonitors by remember { mutableStateOf(false) }
@@ -457,7 +516,7 @@ fun PcControlMainApp(
     var streamZoom by remember { mutableFloatStateOf(1f) }
     var screenBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
-    // Окна, программы, звук
+    // Окна, софт, звук
     var openWindows by remember { mutableStateOf<List<WindowItem>>(emptyList()) }
     var volumeSlider by remember { mutableFloatStateOf(40f) }
     var videoUrl by remember { mutableStateOf("") }
@@ -492,7 +551,14 @@ fun PcControlMainApp(
             .putString("host", host.trim())
             .putString("token", token.trim())
             .putString("mac", mac.trim())
+            .putFloat("mouse_sens", mouseSensitivity)
             .apply()
+    }
+
+    fun wake() {
+        save()
+        status = "Отправляю сигнал WoL…"
+        scope.launch { status = sendMagicPacket(mac) }
     }
 
     suspend fun refresh() {
@@ -570,7 +636,7 @@ fun PcControlMainApp(
     fun sendExactVolume(percent: Int) {
         save()
         volumeSlider = percent.toFloat()
-        status = "Громкость $percent%…"
+        status = "Громкость: $percent%…"
         scope.launch {
             val res = command(host.trim(), token.trim(), "/volume", "POST", percent.toString())
             status = if (res == "Готово ✔") "Громкость: $percent% ✔" else res
@@ -631,7 +697,7 @@ fun PcControlMainApp(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString() ?: ""
         if (text.isEmpty()) {
-            status = "Буфер пуст"
+            status = "Буфер телефона пуст"
             return
         }
         save()
@@ -690,13 +756,6 @@ fun PcControlMainApp(
         }
     }
 
-
-    fun wake() {
-        save()
-        status = "Отправляю…"
-        scope.launch { status = sendMagicPacket(mac) }
-    }
-
     fun startOtaUpdate() {
         val update = otaUpdateInfo ?: return
         isDownloadingUpdate = true
@@ -705,6 +764,10 @@ fun PcControlMainApp(
             status = downloadAndInstallApk(context, host.trim(), token.trim()) { progress ->
                 downloadProgress = progress
             }
+            if (update.hash.isNotEmpty()) {
+                installedApkHash = update.hash
+                prefs.edit().putString("installed_apk_hash", update.hash).apply()
+            }
             isDownloadingUpdate = false
             otaUpdateInfo = null
         }
@@ -712,7 +775,7 @@ fun PcControlMainApp(
 
     LaunchedEffect(host, token) {
         if (host.isNotBlank() && token.isNotBlank()) {
-            val res = checkOtaUpdate(host.trim(), token.trim())
+            val res = checkOtaUpdate(context, host.trim(), token.trim(), installedApkHash)
             otaUpdateInfo = res.update
         }
     }
@@ -735,18 +798,18 @@ fun PcControlMainApp(
         if (currentTab == NavTab.APPS) refresh()
     }
 
-    // Цикл трансляции экрана (работает ТОЛЬКО когда активна вкладка Экран И нажата кнопка Запустить)
+    // Цикл трансляции экрана (активен ТОЛЬКО когда вкладка Экран И нажата кнопка)
     LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
         while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
             val w = when {
                 streamHd -> 1366
-                streamFps == 90 -> 640  // Максимальная плавность при 90 Гц
+                streamFps == 90 -> 640
                 streamFps == 60 -> 720
                 else -> 854
             }
             val q = when {
                 streamHd -> 72
-                streamFps == 90 -> 42  // Легкий кадр -> мгновенная доставка
+                streamFps == 90 -> 42
                 streamFps == 60 -> 48
                 else -> 56
             }
@@ -756,15 +819,14 @@ fun PcControlMainApp(
                 pcOnline = true
             }
             val frameDelay = when (streamFps) {
-                90 -> 10L  // ~90 FPS
-                60 -> 16L  // ~60 FPS
-                else -> 33L // ~30 FPS
+                90 -> 10L
+                60 -> 16L
+                else -> 33L
             }
             delay(if (streamHd) 120L else frameDelay)
         }
     }
 
-    // Плавная отправка движений курсора
     LaunchedEffect(currentTab, host, token) {
         while (currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
             val dx = accDx.roundToInt()
@@ -792,9 +854,10 @@ fun PcControlMainApp(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                 tonalElevation = 8.dp
             ) {
                 NavTab.values().forEach { tab ->
@@ -805,7 +868,14 @@ fun PcControlMainApp(
                             currentTab = tab
                         },
                         icon = { Text(tab.icon, fontSize = 20.sp) },
-                        label = { Text(tab.title, fontSize = 12.sp, fontWeight = if (currentTab == tab) FontWeight.Bold else FontWeight.Normal) }
+                        label = {
+                            Text(
+                                tab.title,
+                                fontSize = 11.sp,
+                                fontWeight = if (currentTab == tab) FontWeight.Bold else FontWeight.Normal,
+                                color = if (currentTab == tab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     )
                 }
             }
@@ -816,36 +886,45 @@ fun PcControlMainApp(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Верхняя плашка статуса
+            // Верхняя стильная шапка
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Пульт ПК • ${currentTab.title}",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Пульт ПК",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "• ${currentTab.title}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
 
                 val (dotColor, stateText) = when (pcOnline) {
-                    true -> Color(0xFF4CAF50) to if (tokenError) "Токен неверен" else "В сети"
-                    false -> Color(0xFFE53935) to "Не в сети"
-                    null -> Color(0xFF9E9E9E) to "Настройка"
+                    true -> Color(0xFF10B981) to if (tokenError) "Токен неверен" else "В сети"
+                    false -> Color(0xFFEF4444) to "Не в сети"
+                    null -> Color(0xFF6B7280) to "Настройка"
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
-                    Text(stateText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                    Text(stateText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -870,7 +949,7 @@ fun PcControlMainApp(
                 if (activeWindow.isNotBlank()) infoParts.add("Окно: $activeWindow")
                 if (infoParts.isNotEmpty()) {
                     Text(
-                        infoParts.joinToString(" • "),
+                        infoParts.joinToString("  •  "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -879,10 +958,11 @@ fun PcControlMainApp(
                 }
             }
 
-            // Плашка обновления OTA
+            // Баннер OTA-обновления (появляется только если есть РЕАЛЬНО НОВЫЙ файл с другим хешем)
             if (otaUpdateInfo != null && !isDownloadingUpdate) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -891,10 +971,14 @@ fun PcControlMainApp(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Доступно обновление!", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("Версия ${otaUpdateInfo!!.versionName} на ПК", style = MaterialTheme.typography.bodySmall)
+                            Text("Доступно обновление на ПК! 🚀", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text("Файл: ${otaUpdateInfo!!.versionName}", style = MaterialTheme.typography.bodySmall)
                         }
-                        Button(onClick = { startOtaUpdate() }, contentPadding = KeyPadding) {
+                        Button(
+                            onClick = { startOtaUpdate() },
+                            contentPadding = KeyPadding,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
                             Text("Обновить ⬇")
                         }
                     }
@@ -902,6 +986,7 @@ fun PcControlMainApp(
             } else if (isDownloadingUpdate) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -918,10 +1003,11 @@ fun PcControlMainApp(
                 }
             }
 
-            // ---------------- ВКЛАДКА 1: ЭКРАН И МЫШЬ ----------------
+            // ==================== 1. ЭКРАН И МЫШЬ ====================
             if (currentTab == NavTab.SCREEN) {
                 OutlinedCard(
                     shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -932,21 +1018,24 @@ fun PcControlMainApp(
                         ) {
                             Text("Трансляция экрана", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             if (isStreamingActive) {
-                                Text("Прямой эфир", color = Color(0xFF4CAF50), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Box(modifier = Modifier.size(8.dp).background(Color(0xFF10B981), CircleShape))
+                                    Text("Прямой эфир", color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
 
-                        // Главная кнопка запуска / остановки
                         if (!isStreamingActive) {
                             Button(
                                 onClick = { isStreamingActive = true },
                                 modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
-                                Text("▶ Включить трансляцию экрана", fontWeight = FontWeight.Bold)
+                                Text("▶ Запустить трансляцию экрана", fontWeight = FontWeight.Bold)
                             }
                             Text(
-                                "Трансляция выключена (не расходует сеть и батарею)",
+                                "Трансляция выключена (не расходует сеть и заряд батареи)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -955,45 +1044,49 @@ fun PcControlMainApp(
                         } else {
                             OutlinedButton(
                                 onClick = { isStreamingActive = false },
-                                modifier = Modifier.fillMaxWidth().height(44.dp)
+                                modifier = Modifier.fillMaxWidth().height(42.dp),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("⏹ Остановить трансляцию", color = MaterialTheme.colorScheme.error)
+                                Text("⏹ Остановить трансляцию", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
 
-                            // Переключатель FPS: 30 / 60 / 90
+                            // Панель переключения FPS: 30 / 60 / 90
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("FPS:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                listOf(30, 60, 90).forEach { fpsValue ->
+                                listOf(30, 60, 90).forEach { fpsVal ->
                                     FilterChip(
-                                        selected = streamFps == fpsValue,
+                                        selected = streamFps == fpsVal,
                                         onClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            streamFps = fpsValue
+                                            streamFps = fpsVal
                                         },
-                                        label = { Text(if (fpsValue == 90) "⚡ 90 FPS" else "$fpsValue FPS") }
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = if (fpsVal == 90) Color(0xFF8B5CF6) else MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor = Color.White
+                                        ),
+                                        label = { Text(if (fpsVal == 90) "⚡ 90 FPS" else "$fpsVal FPS") }
                                     )
                                 }
                             }
 
-                            // Доп. кнопки: HD, Зум, Все экраны, Режим клика
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                KeyButton(if (streamHd) "HD ✔" else "SD", filled = streamHd) { streamHd = !streamHd }
-                                KeyButton("🔍 ${streamZoom.toInt()}×") {
+                                CoolButton(if (streamHd) "HD ✔" else "SD", filled = streamHd) { streamHd = !streamHd }
+                                CoolButton("🔍 ${streamZoom.toInt()}×") {
                                     streamZoom = when (streamZoom) {
                                         1f -> 2f
                                         2f -> 3f
                                         else -> 1f
                                     }
                                 }
-                                KeyButton(if (streamAllMonitors) "Все экр." else "1 экр.") { streamAllMonitors = !streamAllMonitors }
-                                KeyButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") { directTapMode = !directTapMode }
+                                CoolButton(if (streamAllMonitors) "Все экр." else "1 экр.") { streamAllMonitors = !streamAllMonitors }
+                                CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") { directTapMode = !directTapMode }
                             }
 
-                            // Сам экран трансляции
                             val currentBmp = screenBitmap
                             val aspect = if (currentBmp != null && currentBmp.height > 0) {
                                 (currentBmp.width.toFloat() / currentBmp.height.toFloat()).coerceIn(1.2f, 3.2f)
@@ -1055,8 +1148,8 @@ fun PcControlMainApp(
                                             .pointerInput(host, token) {
                                                 detectDragGestures { change, dragAmount ->
                                                     change.consume()
-                                                    accDx += dragAmount.x * MOUSE_SENSITIVITY
-                                                    accDy += dragAmount.y * MOUSE_SENSITIVITY
+                                                    accDx += dragAmount.x * mouseSensitivity
+                                                    accDy += dragAmount.y * mouseSensitivity
                                                 }
                                             }
                                     )
@@ -1066,30 +1159,47 @@ fun PcControlMainApp(
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                KeyButton("ЛКМ") { sendMouseAction("left") }
-                                KeyButton("ПКМ") { sendMouseAction("right") }
-                                KeyButton("⬆ Скролл") { sendMouseAction("scroll", dy = 3) }
-                                KeyButton("⬇ Скролл") { sendMouseAction("scroll", dy = -3) }
-                                KeyButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
+                                CoolButton("ЛКМ") { sendMouseAction("left") }
+                                CoolButton("ПКМ") { sendMouseAction("right") }
+                                CoolButton("⬆ Скролл") { sendMouseAction("scroll", dy = 3) }
+                                CoolButton("⬇ Скролл") { sendMouseAction("scroll", dy = -3) }
+                                CoolButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
                             }
                         }
                     }
                 }
 
-                // Карточка тачпада и ввода текста
+                // Карточка тачпада и клавиатуры
                 OutlinedCard(
                     shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Тачпад и клавиатура", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Тачпад и ввод текста", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Скорость: ${String.format(Locale.US, "%.1f", mouseSensitivity)}×", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+
+                        // Чувствительность мыши
+                        Slider(
+                            value = mouseSensitivity,
+                            onValueChange = { mouseSensitivity = it; save() },
+                            valueRange = 0.8f..3.0f,
+                            modifier = Modifier.fillMaxWidth().height(24.dp)
+                        )
 
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(140.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                .height(135.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
                                 .pointerInput(host, token) {
                                     detectTapGestures(
                                         onTap = {
@@ -1109,27 +1219,26 @@ fun PcControlMainApp(
                                 .pointerInput(host, token) {
                                     detectDragGestures { change, dragAmount ->
                                         change.consume()
-                                        accDx += dragAmount.x * MOUSE_SENSITIVITY
-                                        accDy += dragAmount.y * MOUSE_SENSITIVITY
+                                        accDx += dragAmount.x * mouseSensitivity
+                                        accDy += dragAmount.y * mouseSensitivity
                                     }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "Тачпад: свайп — курсор • Тап — ЛКМ • 2×Тап — 2×Клик • Удержание — ПКМ",
+                                "Сенсорная панель\nТап — ЛКМ • 2×Тап — 2×Клик • Удержание — ПКМ",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(12.dp)
+                                textAlign = TextAlign.Center
                             )
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KeyButton("ЛКМ") { sendMouseAction("left") }
-                            KeyButton("2× Клик") { sendMouseAction("double") }
-                            KeyButton("ПКМ") { sendMouseAction("right") }
-                            KeyButton("Скролл ⬆") { sendMouseAction("scroll", dy = 3) }
-                            KeyButton("Скролл ⬇") { sendMouseAction("scroll", dy = -3) }
+                            CoolButton("ЛКМ") { sendMouseAction("left") }
+                            CoolButton("2× Клик") { sendMouseAction("double") }
+                            CoolButton("ПКМ") { sendMouseAction("right") }
+                            CoolButton("Скролл ⬆") { sendMouseAction("scroll", dy = 3) }
+                            CoolButton("Скролл ⬇") { sendMouseAction("scroll", dy = -3) }
                         }
 
                         Row(
@@ -1140,33 +1249,38 @@ fun PcControlMainApp(
                             OutlinedTextField(
                                 value = textToType,
                                 onValueChange = { textToType = it },
-                                label = { Text("Печать на ПК (любой язык)") },
+                                label = { Text("Печать на ПК (RU / EN)") },
                                 singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             )
-                            Button(onClick = { sendTypeText(enter = true) }, modifier = Modifier.height(56.dp)) {
-                                Text("Ввод ↵")
+                            Button(
+                                onClick = { sendTypeText(enter = true) },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.height(56.dp)
+                            ) {
+                                Text("Ввод ↵", fontWeight = FontWeight.Bold)
                             }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KeyButton("⌨ Без Enter") { sendTypeText(enter = false) }
-                            KeyButton("⌫ Стереть") { run("/media/key_backspace", refreshAfter = false) }
-                            KeyButton("Пробел") { run("/media/key_space", refreshAfter = false) }
-                            KeyButton("Esc") { run("/media/key_esc", refreshAfter = false) }
+                            CoolButton("⌨ Без Enter") { sendTypeText(enter = false) }
+                            CoolButton("⌫ Стереть") { run("/media/key_backspace", refreshAfter = false) }
+                            CoolButton("Пробел") { run("/media/key_space", refreshAfter = false) }
+                            CoolButton("Esc") { run("/media/key_esc", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KeyButton("📋 Буфер → ПК") { sendPhoneClipboardToPc() }
-                            KeyButton("📥 Буфер ← ПК") { fetchPcClipboardToPhone() }
-                            KeyButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
-                            KeyButton("Alt+F4") { run("/media/alt_f4", refreshAfter = true) }
+                            CoolButton("📋 Буфер → ПК") { sendPhoneClipboardToPc() }
+                            CoolButton("📥 Буфер ← ПК") { fetchPcClipboardToPhone() }
+                            CoolButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
+                            CoolButton("Alt+F4") { run("/media/alt_f4", refreshAfter = true) }
                         }
                     }
                 }
             }
 
-            // ---------------- ВКЛАДКА 2: МЕДИА И YOUTUBE ----------------
+            // ==================== 2. МЕДИА И YOUTUBE ====================
             if (currentTab == NavTab.MEDIA) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1179,85 +1293,98 @@ fun PcControlMainApp(
                             OutlinedTextField(
                                 value = videoUrl,
                                 onValueChange = { videoUrl = it },
-                                label = { Text("Ссылка или поиск в YouTube") },
+                                label = { Text("Ссылка или поиск на YouTube") },
                                 singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             )
-                            Button(onClick = { sendUrlToPc(videoUrl) }, modifier = Modifier.height(56.dp)) {
-                                Text("На ПК ▶")
+                            Button(onClick = { sendUrlToPc(videoUrl) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.height(56.dp)) {
+                                Text("На ПК ▶", fontWeight = FontWeight.Bold)
                             }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            KeyButton("📋 Из буфера на ПК", weight = 1.1f) { pasteAndOpenClipboard() }
-                            KeyButton("✕ Закрыть вкладку") { run("/media/close_tab", refreshAfter = false) }
-                            KeyButton("↩ Вернуть вкладку") { run("/media/reopen_tab", refreshAfter = false) }
+                            CoolButton("📋 Из буфера на ПК", weight = 1.1f) { pasteAndOpenClipboard() }
+                            CoolButton("✕ Закрыть вкладку") { run("/media/close_tab", refreshAfter = false) }
+                            CoolButton("↩ Вернуть вкладку") { run("/media/reopen_tab", refreshAfter = false) }
                         }
                     }
                 }
 
+                // Громкость с пресетами
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Громкость звука", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("${volumeSlider.roundToInt()}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Slider(
-                                value = volumeSlider,
-                                onValueChange = { volumeSlider = it },
-                                onValueChangeFinished = { sendExactVolume(volumeSlider.roundToInt()) },
-                                valueRange = 0f..100f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedButton(
-                                onClick = { run("/media/audio_output", refreshAfter = false) },
-                                contentPadding = KeyPadding
-                            ) {
-                                Text("🎧 Выход")
-                            }
+                            Text("Громкость звука", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("${volumeSlider.roundToInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                        }
+
+                        Slider(
+                            value = volumeSlider,
+                            onValueChange = { volumeSlider = it },
+                            onValueChangeFinished = { sendExactVolume(volumeSlider.roundToInt()) },
+                            valueRange = 0f..100f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Быстрые пресеты громкости
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CoolButton("🔇 Мут") { run("/media/vol_mute", refreshAfter = false) }
+                            CoolButton("15% 🌙") { sendExactVolume(15) }
+                            CoolButton("40%") { sendExactVolume(40) }
+                            CoolButton("75%") { sendExactVolume(75) }
+                            CoolButton("100% 🔊") { sendExactVolume(100) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KeyButton("−10%") { run("/media/vol_down_10", refreshAfter = false) }
-                            KeyButton("Тише") { run("/media/vol_down", refreshAfter = false) }
-                            KeyButton("Мут") { run("/media/vol_mute", refreshAfter = false) }
-                            KeyButton("Громче") { run("/media/vol_up", refreshAfter = false) }
-                            KeyButton("+10%") { run("/media/vol_up_10", refreshAfter = false) }
+                            CoolButton("−10%") { run("/media/vol_down_10", refreshAfter = false) }
+                            CoolButton("Тише") { run("/media/vol_down", refreshAfter = false) }
+                            CoolButton("Громче") { run("/media/vol_up", refreshAfter = false) }
+                            CoolButton("+10%") { run("/media/vol_up_10", refreshAfter = false) }
+                            CoolButton("🎧 Выход") { run("/media/audio_output", refreshAfter = false) }
                         }
                     }
                 }
 
+                // Пульт плеера и скорость YouTube
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Пульт плеера и YouTube", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            KeyButton("⏮ Пред.") { run("/media/prev", refreshAfter = false) }
-                            KeyButton("⏯ Пауза / Play", weight = 1.3f, filled = true) { run("/media/play_pause", refreshAfter = false) }
-                            KeyButton("⏭ След.") { run("/media/next", refreshAfter = false) }
+                            CoolButton("⏮ Пред.") { run("/media/prev", refreshAfter = false) }
+                            CoolButton("⏯ Пауза / Play", weight = 1.4f, filled = true) { run("/media/play_pause", refreshAfter = false) }
+                            CoolButton("⏭ След.") { run("/media/next", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KeyButton("⏪ -10с") { run("/media/yt_back_10", refreshAfter = false) }
-                            KeyButton("-5с") { run("/media/yt_back", refreshAfter = false) }
-                            KeyButton("⛶ Полный экран", weight = 1.2f) { run("/media/yt_fullscreen", refreshAfter = false) }
-                            KeyButton("+5с") { run("/media/yt_forward", refreshAfter = false) }
-                            KeyButton("+10с ⏩") { run("/media/yt_forward_10", refreshAfter = false) }
+                            CoolButton("⏪ -10с") { run("/media/yt_back_10", refreshAfter = false) }
+                            CoolButton("-5с") { run("/media/yt_back", refreshAfter = false) }
+                            CoolButton("⛶ Полный экран", weight = 1.2f) { run("/media/yt_fullscreen", refreshAfter = false) }
+                            CoolButton("+5с") { run("/media/yt_forward", refreshAfter = false) }
+                            CoolButton("+10с ⏩") { run("/media/yt_forward_10", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            KeyButton("⬆ Выше (Shorts)") { run("/media/yt_up", refreshAfter = false) }
-                            KeyButton("⬇ Ниже (Shorts)") { run("/media/yt_down", refreshAfter = false) }
-                            KeyButton("💬 Субтитры (C)") { run("/media/yt_subtitles", refreshAfter = false) }
-                            KeyButton("🖥 Свернуть окна") { run("/media/win_d", refreshAfter = false) }
+                            CoolButton("⚡ Скорость −") { run("/media/yt_speed_down", refreshAfter = false) }
+                            CoolButton("💬 Субтитры (C)") { run("/media/yt_subtitles", refreshAfter = false) }
+                            CoolButton("🎬 Кинотеатр (T)") { run("/media/yt_theater", refreshAfter = false) }
+                            CoolButton("Скорость + ⚡") { run("/media/yt_speed_up", refreshAfter = false) }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CoolButton("⬆ Shorts выше") { run("/media/yt_up", refreshAfter = false) }
+                            CoolButton("⬇ Shorts ниже") { run("/media/yt_down", refreshAfter = false) }
+                            CoolButton("🖥 Свернуть окна") { run("/media/win_d", refreshAfter = false) }
                         }
                     }
                 }
             }
 
-            // ---------------- ВКЛАДКА 3: ОКНА И СОФТ ----------------
+            // ==================== 3. ОКНА И СОФТ ====================
             if (currentTab == NavTab.APPS) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1267,20 +1394,20 @@ fun PcControlMainApp(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Открытые окна на ПК", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            OutlinedButton(onClick = { scope.launch { refresh() } }, contentPadding = KeyPadding) {
+                            OutlinedButton(onClick = { scope.launch { refresh() } }, contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)) {
                                 Text("Обновить 🔄")
                             }
                         }
 
                         if (openWindows.isEmpty()) {
-                            Text("Окна не найдены или список загружается…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Окна не найдены или список обновляется…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         openWindows.forEach { win ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (win.active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (win.active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent)
                                     .padding(4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1293,9 +1420,9 @@ fun PcControlMainApp(
                                         color = if (win.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding) { Text("На экран") }
-                                OutlinedButton(onClick = { sendWindowAction(win.hwnd, "minimize") }, contentPadding = KeyPadding) { Text("—") }
-                                OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding) { Text("✕") }
+                                Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("На экран") }
+                                OutlinedButton(onClick = { sendWindowAction(win.hwnd, "minimize") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("—") }
+                                OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
                             }
                         }
                     }
@@ -1309,7 +1436,7 @@ fun PcControlMainApp(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Программы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Button(onClick = { showAddAppDialog = true }, contentPadding = KeyPadding) {
+                            Button(onClick = { showAddAppDialog = true }, contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)) {
                                 Text("+ Добавить")
                             }
                         }
@@ -1329,15 +1456,15 @@ fun PcControlMainApp(
                                         Text("работает", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
-                                Button(onClick = { run("/apps/${app.id}/launch") }, contentPadding = KeyPadding) {
+                                Button(onClick = { run("/apps/${app.id}/launch") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) {
                                     Text("Пуск")
                                 }
                                 if (app.canClose) {
-                                    OutlinedButton(onClick = { run("/apps/${app.id}/close") }, contentPadding = KeyPadding) {
+                                    OutlinedButton(onClick = { run("/apps/${app.id}/close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) {
                                         Text("Закрыть")
                                     }
                                 }
-                                OutlinedButton(onClick = { deleteApp(app.id) }, contentPadding = KeyPadding) {
+                                OutlinedButton(onClick = { deleteApp(app.id) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) {
                                     Text("🗑")
                                 }
                             }
@@ -1346,9 +1473,9 @@ fun PcControlMainApp(
                 }
             }
 
-            // ---------------- ВКЛАДКА 4: ПИТАНИЕ И ЭКРАН ----------------
+            // ==================== 4. ПИТАНИЕ И ЭКРАН ====================
             if (currentTab == NavTab.POWER) {
-                // Умная плашка отмены: видна ТОЛЬКО когда активен таймер выключения!
+                // Умная плашка отмены: отображается ТОЛЬКО когда активен таймер выключения!
                 if (shutdownActive || shutdownRemainingSec > 0) {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -1362,7 +1489,7 @@ fun PcControlMainApp(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("⏱", fontSize = 24.sp)
                                 Column {
-                                    Text("Активен таймер выключения ПК", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text("Таймер выключения ПК запущен", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     val mins = (shutdownRemainingSec + 59) / 60
                                     Text("ПК выключится через $mins мин.", style = MaterialTheme.typography.bodyMedium)
                                 }
@@ -1370,6 +1497,7 @@ fun PcControlMainApp(
                             Button(
                                 onClick = { run("/cancel", refreshAfter = true) },
                                 modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                             ) {
                                 Text("❌ Отменить выключение ПК", fontWeight = FontWeight.Bold)
@@ -1382,47 +1510,47 @@ fun PcControlMainApp(
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Управление питанием", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-                        Button(onClick = { wake() }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                            Text("Включить ПК (Wake-on-LAN)")
+                        Button(
+                            onClick = { wake() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("Включить ПК (Wake-on-LAN)", fontWeight = FontWeight.Bold)
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick = { pending = "/shutdown" to "Выключить ПК" },
-                                modifier = Modifier.weight(1f).height(48.dp)
-                            ) { Text("Выключить") }
-
-                            Button(
-                                onClick = { pending = "/sleep" to "Перевести ПК в режим сна" },
-                                modifier = Modifier.weight(1f).height(48.dp)
-                            ) { Text("Сон 💤") }
-
-                            Button(
-                                onClick = { pending = "/restart" to "Перезагрузить ПК" },
-                                modifier = Modifier.weight(1f).height(48.dp)
-                            ) { Text("Рестарт") }
+                            CoolButton("Выключить", accentColor = Color(0xFFDC2626), filled = true) {
+                                pending = "/shutdown" to "Выключить ПК"
+                            }
+                            CoolButton("Сон 💤", accentColor = Color(0xFF7C3AED), filled = true) {
+                                pending = "/sleep" to "Перевести ПК в режим сна"
+                            }
+                            CoolButton("Рестарт") {
+                                pending = "/restart" to "Перезагрузить ПК"
+                            }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            KeyButton("🌙 Экран выкл.") { run("/monitor_off", refreshAfter = false) }
-                            KeyButton("🔒 Блокировка") { run("/lock", refreshAfter = false) }
+                            CoolButton("🌙 Экран выкл.") { run("/monitor_off", refreshAfter = false) }
+                            CoolButton("🔒 Блокировка") { run("/lock", refreshAfter = false) }
                         }
                     }
                 }
 
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Таймеры выключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            KeyButton("⏱ 30 мин") { run("/shutdown_30m", refreshAfter = true) }
-                            KeyButton("⏱ 60 мин") { run("/shutdown_60m", refreshAfter = true) }
-                            KeyButton("⏱ 2 часа") { run("/shutdown_120m", refreshAfter = true) }
+                        Text("Таймеры сна и выключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CoolButton("⏱ 15 мин") { run("/shutdown_15m", refreshAfter = true) }
+                            CoolButton("⏱ 30 мин") { run("/shutdown_30m", refreshAfter = true) }
+                            CoolButton("⏱ 60 мин") { run("/shutdown_60m", refreshAfter = true) }
+                            CoolButton("⏱ 2 часа") { run("/shutdown_120m", refreshAfter = true) }
                         }
                     }
                 }
             }
 
-            // ---------------- ВКЛАДКА 5: ОПЦИИ И НАСТРОЙКИ ----------------
+            // ==================== 5. ОПЦИИ И НАСТРОЙКИ ====================
             if (currentTab == NavTab.SETTINGS) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1433,6 +1561,7 @@ fun PcControlMainApp(
                             onValueChange = { host = it; save() },
                             label = { Text("Адрес ПК (Tailscale IP или локальный)") },
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
@@ -1440,6 +1569,7 @@ fun PcControlMainApp(
                             onValueChange = { token = it; save() },
                             label = { Text("Токен (из config.json на ПК)") },
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             visualTransformation = PasswordVisualTransformation(),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1448,6 +1578,7 @@ fun PcControlMainApp(
                             onValueChange = { mac = it; save() },
                             label = { Text("MAC-адрес ПК (для Wake-on-LAN)") },
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -1456,17 +1587,22 @@ fun PcControlMainApp(
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Обновление приложения (OTA)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Текущая версия: v$CURRENT_APP_VERSION_NAME (код $CURRENT_APP_VERSION_CODE)", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Установленная версия: v${getInstalledVersionName(context)} (код ${getInstalledVersionCode(context)})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
                         Button(
                             onClick = {
                                 scope.launch {
                                     status = "Проверяю папку updates на ПК…"
-                                    val res = checkOtaUpdate(host.trim(), token.trim())
+                                    val res = checkOtaUpdate(context, host.trim(), token.trim(), installedApkHash)
                                     otaUpdateInfo = res.update
                                     status = res.message
                                 }
                             },
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Проверить обновления на ПК 🔄")
@@ -1492,7 +1628,7 @@ fun PcControlMainApp(
         )
     }
 
-    // Диалог добавления программы прямо с телефона
+    // Диалог добавления программы
     if (showAddAppDialog) {
         AlertDialog(
             onDismissRequest = { showAddAppDialog = false },
