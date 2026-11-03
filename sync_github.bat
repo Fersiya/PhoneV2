@@ -21,7 +21,7 @@ echo [2/3] Committing...
 git commit -m "Auto-update (%date% %time%)" >nul 2>&1
 
 echo [3/3] Pushing to GitHub...
-git push --force origin main
+git push origin main || git push --force-with-lease origin main
 if errorlevel 1 (
     echo [!] Push failed. Check your git credentials or internet connection.
     pause

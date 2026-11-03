@@ -230,6 +230,78 @@ suspend fun http(
         }
     }
 
+suspend fun runMjpegStream(
+    host: String,
+    token: String,
+    fps: Int,
+    width: Int,
+    quality: Int,
+    allMonitors: Boolean,
+    onFrame: (ImageBitmap) -> Unit
+) = withContext(Dispatchers.IO) {
+    val monParam = if (allMonitors) "all" else "0"
+    val conn = URL("http://$host:$PORT/stream?fps=$fps&w=$width&q=$quality&m=$monParam").openConnection() as HttpURLConnection
+    try {
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 3000
+        conn.readTimeout = 6000
+        val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
+        conn.setRequestProperty("X-Token", safeToken)
+        if (conn.responseCode != 200) return@withContext
+        val stream = conn.inputStream.buffered(65536)
+        val opts = BitmapFactory.Options().apply {
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+        val lineBuf = java.io.ByteArrayOutputStream(128)
+
+        fun readLineAscii(): String? {
+            lineBuf.reset()
+            while (true) {
+                val b = stream.read()
+                if (b == -1) return null
+                if (b == '\n'.code) {
+                    val bytes = lineBuf.toByteArray()
+                    val len = if (bytes.isNotEmpty() && bytes.last() == '\r'.code.toByte()) bytes.size - 1 else bytes.size
+                    return String(bytes, 0, len, Charsets.US_ASCII)
+                }
+                lineBuf.write(b)
+            }
+        }
+
+        while (coroutineContext.isActive) {
+            var contentLength = -1
+            while (coroutineContext.isActive) {
+                val line = readLineAscii() ?: return@withContext
+                if (line.startsWith("Content-Length:", ignoreCase = true)) {
+                    contentLength = line.substringAfter(":").trim().toIntOrNull() ?: -1
+                } else if (line.isEmpty() && contentLength > 0) {
+                    break
+                }
+            }
+            if (contentLength <= 0) break
+
+            val frameBytes = ByteArray(contentLength)
+            var readTotal = 0
+            while (readTotal < contentLength && coroutineContext.isActive) {
+                val r = stream.read(frameBytes, readTotal, contentLength - readTotal)
+                if (r == -1) break
+                readTotal += r
+            }
+            if (readTotal == contentLength) {
+                val bmp = BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
+                if (bmp != null) {
+                    withContext(Dispatchers.Main) {
+                        onFrame(bmp.asImageBitmap())
+                    }
+                }
+            }
+        }
+    } catch (_: Exception) {
+    } finally {
+        try { conn.disconnect() } catch (_: Exception) {}
+    }
+}
+
 suspend fun fetchScreenBitmap(
     host: String,
     token: String,
@@ -259,6 +331,8 @@ suspend fun fetchScreenBitmap(
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
         } catch (_: Exception) {
             null
+        } finally {
+            try { conn.disconnect() } catch (_: Exception) {}
         }
     }
 
@@ -286,14 +360,20 @@ suspend fun checkOtaUpdate(context: Context, host: String, token: String, instal
                 val size = o.optLong("size", 0L)
                 val fn = o.optString("filename", "app-debug.apk")
 
-                // Защита от бесконечного предложения обновиться:
-                // Если хеш совпадает с уже установленным файлом — обновление НЕ нужно!
-                if (hash.isNotEmpty() && hash == installedHash) {
+                val currentCode = getInstalledVersionCode(context)
+                // Читаем настоящий хеш работающего сейчас приложения из файла base.apk
+                val runningApkHash = try {
+                    computeFileSha256(File(context.packageCodePath))
+                } catch (_: Exception) {
+                    ""
+                }
+
+                // Если установленный APK физически имеет тот же хеш — обновляться не нужно
+                if (hash.isNotEmpty() && runningApkHash.isNotEmpty() && hash.equals(runningApkHash, ignoreCase = true)) {
                     return@withContext OtaCheckResult(null, "Установлена последняя версия ($fn) ✔")
                 }
 
-                val currentCode = getInstalledVersionCode(context)
-                if (vCode > currentCode || (hash.isNotEmpty() && hash != installedHash)) {
+                if (vCode > currentCode || (hash.isNotEmpty() && runningApkHash.isNotEmpty() && !hash.equals(runningApkHash, ignoreCase = true))) {
                     return@withContext OtaCheckResult(UpdateInfo(true, vCode, vName, hash, size), "Найдено обновление: $fn ✔")
                 } else {
                     return@withContext OtaCheckResult(null, "Установлена актуальная версия ✔")
@@ -805,7 +885,7 @@ fun PcControlMainApp(
     }
 
     fun quickAddAppFromWindow(win: WindowItem) {
-        val cleanTitle = win.title.split("-").first().trim().ifEmpty { win.process.replace(".exe", "").capitalize() }
+        val cleanTitle = win.title.split("-").first().trim().ifEmpty { win.process.replace(".exe", "").replaceFirstChar { it.titlecase() } }
         val payload = JSONObject().apply {
             put("title", cleanTitle)
             put("launch", win.path.ifEmpty { win.process })
@@ -835,13 +915,7 @@ fun PcControlMainApp(
                 downloadProgress = progress
             }
             status = res
-            // Сохраняем хеш ТОЛЬКО если установщик реально успешно запущен
-            if (res.startsWith("Запуск установщика")) {
-                if (update.hash.isNotEmpty()) {
-                    installedApkHash = update.hash
-                    prefs.edit().putString("installed_apk_hash", update.hash).apply()
-                }
-            }
+            // Хеш проверяется напрямую из context.packageCodePath при запуске
             isDownloadingUpdate = false
             otaUpdateInfo = null
         }
@@ -878,77 +952,90 @@ fun PcControlMainApp(
         if (currentTab == NavTab.APPS) refresh()
     }
 
-    // Цикл трансляции экрана с динамической компенсацией задержек (идеальная плавность кадров)
+    // Непрерывный высокоскоростной видеопоток экрана (MJPEG поток 60/90/120 FPS + HTTP fallback)
     LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val t0 = System.currentTimeMillis()
                 val w = when {
                     streamHd -> 1280
-                    streamFps == 90 -> 640
-                    streamFps == 60 -> 720
+                    streamFps >= 120 -> 540
+                    streamFps >= 90 -> 640
+                    streamFps >= 60 -> 720
                     else -> 854
                 }
                 val q = when {
                     streamHd -> 68
-                    streamFps == 90 -> 40
-                    streamFps == 60 -> 48
+                    streamFps >= 120 -> 36
+                    streamFps >= 90 -> 42
+                    streamFps >= 60 -> 48
                     else -> 55
                 }
-                val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
-                if (bmp != null) {
-                    screenBitmap = bmp
-                    pcOnline = true
+                val targetFps = if (streamHd) 30 else streamFps
+
+                var gotFrames = false
+                try {
+                    runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors) { bmp ->
+                        screenBitmap = bmp
+                        pcOnline = true
+                        gotFrames = true
+                    }
+                } catch (_: Exception) {
                 }
-                val targetInterval = when {
-                    streamHd -> 90L
-                    streamFps == 90 -> 11L
-                    streamFps == 60 -> 16L
-                    else -> 33L
+
+                if (!gotFrames && isStreamingActive && currentTab == NavTab.SCREEN) {
+                    val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
+                    if (bmp != null) {
+                        screenBitmap = bmp
+                        pcOnline = true
+                    }
+                    delay(33L)
+                } else {
+                    delay(200L)
                 }
-                val elapsed = System.currentTimeMillis() - t0
-                val waitMs = (targetInterval - elapsed).coerceAtLeast(1L)
-                delay(waitMs)
             }
         }
     }
 
-    // Высокоскоростной цикл мыши (UDP 125 Гц для плавного движения + HTTP fallback)
+    // Высокоскоростной цикл мыши (UDP 125 Гц для плавного движения + HTTP fallback) с закрытием сокета
     LaunchedEffect(currentTab, host, token) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             val udpSocket = try { DatagramSocket() } catch (_: Exception) { null }
-            var resolvedIp: InetAddress? = null
-            var lastResolvedHost = ""
-            while (currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val dx = accDx.roundToInt()
-                val dy = accDy.roundToInt()
-                if (dx != 0 || dy != 0) {
-                    accDx -= dx
-                    accDy -= dy
-                    var sentUdp = false
-                    if (udpSocket != null) {
-                        try {
-                            if (host != lastResolvedHost || resolvedIp == null) {
-                                resolvedIp = withContext(Dispatchers.IO) { InetAddress.getByName(host.trim()) }
-                                lastResolvedHost = host
+            try {
+                var resolvedIp: InetAddress? = null
+                var lastResolvedHost = ""
+                while (currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
+                    val dx = accDx.roundToInt()
+                    val dy = accDy.roundToInt()
+                    if (dx != 0 || dy != 0) {
+                        accDx -= dx
+                        accDy -= dy
+                        var sentUdp = false
+                        if (udpSocket != null) {
+                            try {
+                                if (host != lastResolvedHost || resolvedIp == null) {
+                                    resolvedIp = withContext(Dispatchers.IO) { InetAddress.getByName(host.trim()) }
+                                    lastResolvedHost = host
+                                }
+                                val pkt = "${token.trim()}:m:$dx,$dy".toByteArray(Charsets.UTF_8)
+                                val packet = DatagramPacket(pkt, pkt.size, resolvedIp, PORT)
+                                withContext(Dispatchers.IO) { udpSocket.send(packet) }
+                                sentUdp = true
+                            } catch (_: Exception) {
+                                sentUdp = false
                             }
-                            val pkt = "${token.trim()}:m:$dx,$dy".toByteArray(Charsets.UTF_8)
-                            val packet = DatagramPacket(pkt, pkt.size, resolvedIp, PORT)
-                            withContext(Dispatchers.IO) { udpSocket.send(packet) }
-                            sentUdp = true
-                        } catch (_: Exception) {
-                            sentUdp = false
+                        }
+                        if (!sentUdp) {
+                            val payload = """{"action":"move","dx":$dx,"dy":$dy}"""
+                            try {
+                                http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 400)
+                            } catch (_: Exception) {
+                            }
                         }
                     }
-                    if (!sentUdp) {
-                        val payload = """{"action":"move","dx":$dx,"dy":$dy}"""
-                        try {
-                            http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 400)
-                        } catch (_: Exception) {
-                        }
-                    }
+                    delay(8L) // 125 Гц — игровой плавный опрос без рывков
                 }
-                delay(8L) // 125 Гц — игровой плавный опрос без рывков
+            } finally {
+                udpSocket?.close()
             }
         }
     }
@@ -1172,7 +1259,7 @@ fun PcControlMainApp(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("FPS:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                listOf(30, 60, 90).forEach { fpsVal ->
+                                listOf(30, 60, 90, 120).forEach { fpsVal ->
                                     FilterChip(
                                         selected = streamFps == fpsVal,
                                         onClick = {
@@ -1204,7 +1291,7 @@ fun PcControlMainApp(
 
                             val currentBmp = screenBitmap
                             val aspect = if (currentBmp != null && currentBmp.height > 0) {
-                                (currentBmp.width.toFloat() / currentBmp.height.toFloat()).coerceIn(1.2f, 3.2f)
+                                (currentBmp.width.toFloat() / currentBmp.height.toFloat()).coerceIn(0.5f, 4.0f)
                             } else {
                                 16f / 9f
                             }
