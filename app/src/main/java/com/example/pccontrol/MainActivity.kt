@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -187,14 +188,14 @@ fun getInstalledVersionCode(context: Context): Long =
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toLong()
         }
     } catch (_: Exception) {
-        7L
+        -1L
     }
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.5"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.6"
     } catch (_: Exception) {
-        "2.1"
+        "0.0"
     }
 
 suspend fun http(
@@ -249,9 +250,11 @@ suspend fun runMjpegStream(
         val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
         conn.setRequestProperty("X-Token", safeToken)
         if (conn.responseCode != 200) return@withContext
-        val stream = conn.inputStream.buffered(65536)
+        val stream = conn.inputStream.buffered(16384)
+        var reusableBitmap: Bitmap? = null
         val opts = BitmapFactory.Options().apply {
-            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+            inPreferredConfig = Bitmap.Config.RGB_565
+            inMutable = true
         }
         val lineBuf = java.io.ByteArrayOutputStream(128)
 
@@ -295,8 +298,15 @@ suspend fun runMjpegStream(
                     if (b == -1) break
                     skip++
                 }
-                val bmp = BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
+                opts.inBitmap = reusableBitmap
+                val bmp = try {
+                    BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
+                } catch (_: IllegalArgumentException) {
+                    opts.inBitmap = null
+                    BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
+                }
                 if (bmp != null) {
+                    reusableBitmap = bmp
                     val img = bmp.asImageBitmap()
                     withContext(Dispatchers.Main) {
                         onFrame(img)
