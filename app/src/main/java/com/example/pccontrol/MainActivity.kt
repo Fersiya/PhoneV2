@@ -187,12 +187,12 @@ fun getInstalledVersionCode(context: Context): Long =
             context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toLong()
         }
     } catch (_: Exception) {
-        3L
+        7L
     }
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.1"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.5"
     } catch (_: Exception) {
         "2.1"
     }
@@ -289,10 +289,17 @@ suspend fun runMjpegStream(
                 readTotal += r
             }
             if (readTotal == contentLength) {
+                var skip = 0
+                while (skip < 2 && coroutineContext.isActive) {
+                    val b = stream.read()
+                    if (b == -1) break
+                    skip++
+                }
                 val bmp = BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
                 if (bmp != null) {
+                    val img = bmp.asImageBitmap()
                     withContext(Dispatchers.Main) {
-                        onFrame(bmp.asImageBitmap())
+                        onFrame(img)
                     }
                 }
             }
@@ -918,7 +925,9 @@ fun PcControlMainApp(
             status = res
             // Хеш проверяется напрямую из context.packageCodePath при запуске
             isDownloadingUpdate = false
-            otaUpdateInfo = null
+            if (res.startsWith("Запуск установщика")) {
+                otaUpdateInfo = null
+            }
         }
     }
 
@@ -971,7 +980,7 @@ fun PcControlMainApp(
                     streamFps >= 60 -> 48
                     else -> 55
                 }
-                val targetFps = if (streamHd) 30 else streamFps
+                val targetFps = if (streamHd) minOf(60, streamFps) else streamFps
 
                 var gotFrames = false
                 try {
