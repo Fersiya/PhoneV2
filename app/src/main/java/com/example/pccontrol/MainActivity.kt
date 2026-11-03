@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -172,7 +173,7 @@ enum class NavTab(val title: String, val icon: String) {
 data class HttpResult(val code: Int, val body: String)
 data class AppItem(val id: String, val title: String, val canClose: Boolean, val running: Boolean)
 data class WindowItem(val hwnd: Long, val title: String, val process: String, val path: String, val active: Boolean, val minimized: Boolean)
-data class PcStatusSnapshot(val apps: List<AppItem>, val activeWindow: String, val ramPercent: Int, val shutdownRemainingSec: Int, val shutdownActive: Boolean)
+data class PcStatusSnapshot(val apps: List<AppItem>, val activeWindow: String, val ramPercent: Int, val shutdownRemainingSec: Int, val shutdownActive: Boolean, val volume: Int = -1)
 data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val hash: String, val size: Long)
 data class OtaCheckResult(val update: UpdateInfo?, val message: String)
 
@@ -211,6 +212,8 @@ suspend fun http(
             conn.readTimeout = timeoutMs + 3500
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
+            conn.setRequestProperty("Cache-Control", "no-cache")
+            conn.setRequestProperty("Pragma", "no-cache")
             if (method == "POST") {
                 conn.doOutput = true
                 val payload = bodyText?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
@@ -243,6 +246,8 @@ suspend fun fetchScreenBitmap(
             conn.readTimeout = 1500
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
+            conn.setRequestProperty("Cache-Control", "no-cache")
+            conn.setRequestProperty("Pragma", "no-cache")
             if (conn.responseCode != 200) return@withContext null
             val bytes = conn.inputStream.use { it.readBytes() }
             if (bytes.isEmpty()) return@withContext null
@@ -324,6 +329,8 @@ suspend fun downloadAndInstallApk(
             conn.readTimeout = 60000
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
+            conn.setRequestProperty("Cache-Control", "no-cache")
+            conn.setRequestProperty("Pragma", "no-cache")
             if (conn.responseCode != 200) {
                 return@withContext "Ошибка загрузки: код ${conn.responseCode}"
             }
@@ -395,7 +402,8 @@ fun parseStatusSnapshot(json: String): PcStatusSnapshot {
         activeWindow = root.optString("activeWindow", ""),
         ramPercent = root.optInt("ramPercent", 0),
         shutdownRemainingSec = remSec,
-        shutdownActive = active
+        shutdownActive = active,
+        volume = root.optInt("volume", -1)
     )
 }
 
@@ -520,6 +528,7 @@ fun PcControlMainApp(
     // Окна, софт, звук
     var openWindows by remember { mutableStateOf<List<WindowItem>>(emptyList()) }
     var volumeSlider by remember { mutableFloatStateOf(40f) }
+    var hasInitializedVolume by remember { mutableStateOf(false) }
     var videoUrl by remember { mutableStateOf("") }
     var textToType by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
@@ -546,6 +555,12 @@ fun PcControlMainApp(
 
     var accDx by remember { mutableFloatStateOf(0f) }
     var accDy by remember { mutableFloatStateOf(0f) }
+
+    // Автосохранение настроек с дебаунсом (без микрофризов при вводе)
+    LaunchedEffect(host, token, mac) {
+        delay(800)
+        save()
+    }
 
     fun save() {
         prefs.edit()
@@ -579,6 +594,10 @@ fun PcControlMainApp(
                 ramPercent = snap.ramPercent
                 shutdownRemainingSec = snap.shutdownRemainingSec
                 shutdownActive = snap.shutdownActive || (snap.shutdownRemainingSec > 0)
+                if (!hasInitializedVolume && snap.volume >= 0) {
+                    volumeSlider = snap.volume.toFloat()
+                    hasInitializedVolume = true
+                }
             } else {
                 apps = emptyList()
             }
@@ -683,7 +702,8 @@ fun PcControlMainApp(
 
     fun pasteAndOpenClipboard() {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim() ?: ""
+        val clip = clipboard.primaryClip
+        val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0)?.coerceToText(context)?.toString()?.trim() ?: "" else ""
         if (text.isEmpty()) {
             status = "Буфер обмена пуст"
             return
@@ -696,7 +716,8 @@ fun PcControlMainApp(
 
     fun sendPhoneClipboardToPc() {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString() ?: ""
+        val clip = clipboard.primaryClip
+        val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0)?.coerceToText(context)?.toString() ?: "" else ""
         if (text.isEmpty()) {
             status = "Буфер телефона пуст"
             return
@@ -827,32 +848,34 @@ fun PcControlMainApp(
         if (currentTab == NavTab.APPS) refresh()
     }
 
-    // Цикл трансляции экрана (активен ТОЛЬКО когда вкладка Экран И нажата кнопка)
+    // Цикл трансляции экрана (активен ТОЛЬКО когда вкладка Экран, нажата кнопка И приложение на переднем плане)
     LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
-        while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-            val w = when {
-                streamHd -> 1366
-                streamFps == 90 -> 640
-                streamFps == 60 -> 720
-                else -> 854
+        activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
+                val w = when {
+                    streamHd -> 1366
+                    streamFps == 90 -> 640
+                    streamFps == 60 -> 720
+                    else -> 854
+                }
+                val q = when {
+                    streamHd -> 72
+                    streamFps == 90 -> 42
+                    streamFps == 60 -> 48
+                    else -> 56
+                }
+                val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
+                if (bmp != null) {
+                    screenBitmap = bmp
+                    pcOnline = true
+                }
+                val frameDelay = when (streamFps) {
+                    90 -> 10L
+                    60 -> 16L
+                    else -> 33L
+                }
+                delay(if (streamHd) 120L else frameDelay)
             }
-            val q = when {
-                streamHd -> 72
-                streamFps == 90 -> 42
-                streamFps == 60 -> 48
-                else -> 56
-            }
-            val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
-            if (bmp != null) {
-                screenBitmap = bmp
-                pcOnline = true
-            }
-            val frameDelay = when (streamFps) {
-                90 -> 10L
-                60 -> 16L
-                else -> 33L
-            }
-            delay(if (streamHd) 120L else frameDelay)
         }
     }
 
@@ -914,6 +937,7 @@ fun PcControlMainApp(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1003,12 +1027,17 @@ fun PcControlMainApp(
                             Text("Доступно обновление на ПК! 🚀", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             Text("Файл: ${otaUpdateInfo!!.versionName}", style = MaterialTheme.typography.bodySmall)
                         }
-                        Button(
-                            onClick = { startOtaUpdate() },
-                            contentPadding = KeyPadding,
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Обновить ⬇")
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { otaUpdateInfo = null }) {
+                                Text("Позже", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Button(
+                                onClick = { startOtaUpdate() },
+                                contentPadding = KeyPadding,
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Обновить ⬇")
+                            }
                         }
                     }
                 }
@@ -1615,7 +1644,7 @@ fun PcControlMainApp(
 
                         OutlinedTextField(
                             value = host,
-                            onValueChange = { host = it; save() },
+                            onValueChange = { host = it },
                             label = { Text("Адрес ПК (Tailscale IP или локальный)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -1623,7 +1652,7 @@ fun PcControlMainApp(
                         )
                         OutlinedTextField(
                             value = token,
-                            onValueChange = { token = it; save() },
+                            onValueChange = { token = it },
                             label = { Text("Токен (из config.json на ПК)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -1632,7 +1661,7 @@ fun PcControlMainApp(
                         )
                         OutlinedTextField(
                             value = mac,
-                            onValueChange = { mac = it; save() },
+                            onValueChange = { mac = it },
                             label = { Text("MAC-адрес ПК (для Wake-on-LAN)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
