@@ -556,12 +556,6 @@ fun PcControlMainApp(
     var accDx by remember { mutableFloatStateOf(0f) }
     var accDy by remember { mutableFloatStateOf(0f) }
 
-    // Автосохранение настроек с дебаунсом (без микрофризов при вводе)
-    LaunchedEffect(host, token, mac) {
-        delay(800)
-        save()
-    }
-
     fun save() {
         prefs.edit()
             .putString("host", host.trim())
@@ -821,6 +815,12 @@ fun PcControlMainApp(
             isDownloadingUpdate = false
             otaUpdateInfo = null
         }
+    }
+
+    // Автосохранение настроек с дебаунсом (без микрофризов при вводе)
+    LaunchedEffect(host, token, mac) {
+        delay(800)
+        save()
     }
 
     LaunchedEffect(host, token) {
