@@ -248,6 +248,11 @@ COMBO_KEYS = {
     "alt_tab": [0x12, 0x09],           # Alt + Tab (переключить активное окно)
     "alt_f4": [0x12, 0x73],            # Alt + F4 (закрыть текущее окно)
     "audio_output": [0x5B, 0x11, 0x56],  # Win + Ctrl + V (меню выбора аудиовыхода в Windows 11)
+    "task_mgr": [0x11, 0x10, 0x1B],      # Ctrl + Shift + Esc (Диспетчер задач)
+    "win_tab": [0x5B, 0x09],             # Win + Tab (Представление задач)
+    "ctrl_z": [0x11, 0x5A],              # Ctrl + Z (Отменить)
+    "ctrl_c": [0x11, 0x43],              # Ctrl + C (Копировать)
+    "ctrl_v": [0x11, 0x56],              # Ctrl + V (Вставить)
     "yt_speed_up": [0x10, 0xBE],         # Shift + . (> ускорить видео)
     "yt_speed_down": [0x10, 0xBC],       # Shift + , (< замедлить видео)
 }
@@ -1618,7 +1623,17 @@ class Handler(BaseHTTPRequestHandler):
     def _authorized(self) -> bool:
         reload_config_if_needed()
         given = self.headers.get("X-Token", "")
-        return hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8"))
+        if not given:
+            auth_hdr = self.headers.get("Authorization", "")
+            if auth_hdr.lower().startswith("bearer "):
+                given = auth_hdr[7:].strip()
+        if not given:
+            try:
+                qs = parse_qs(urlparse(self.path).query)
+                given = qs.get("token", [""])[0] or qs.get("t", [""])[0]
+            except Exception:
+                pass
+        return bool(given and hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8")))
 
     def _reply(self, code: int, text: str, content_type: str = "text/plain") -> None:
         body = text.encode("utf-8")
@@ -1649,13 +1664,26 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(min(length, 2 * 1024 * 1024)).decode("utf-8", errors="replace")
 
     def do_GET(self):
-        if not self._authorized():
-            return self._reply(401, "unauthorized")
         parsed = urlparse(self.path)
         path = parsed.path
 
+        # Проверка доступности сервера и валидности токена
         if path == "/ping":
-            return self._reply(200, "pong")
+            auth_ok = self._authorized()
+            pc_name = socket.gethostname() or "ПК"
+            return self._reply(
+                200,
+                json.dumps({
+                    "online": True,
+                    "authorized": auth_ok,
+                    "pc": pc_name,
+                    "tunnel": _cloudflare_url
+                }, ensure_ascii=False),
+                "application/json"
+            )
+
+        if not self._authorized():
+            return self._reply(401, "unauthorized")
 
         # Проверка OTA-обновления для смартфона
         if path == "/update/check":
@@ -2394,9 +2422,15 @@ if __name__ == "__main__":
         print(f"  Токен:        {TOKEN}")
         sys.exit(0)
 
-    log(f"Токен: {TOKEN}", to_file=False)
     check_paths()
-    log(f"Сервер слушает порт {PORT}. Остановить: Ctrl+C")
+    local_ips = ", ".join(get_local_ips()) or "127.0.0.1"
+    print("\n" + "=" * 70)
+    print("  🖥️  ПУЛЬТ ПК v5.0 — СЕРВЕР ЗАПУЩЕН И ГОТОВ К РАБОТЕ")
+    print("=" * 70)
+    print(f"  🔑 СЕКРЕТНЫЙ ТОКЕН:  {TOKEN}")
+    print(f"  🏠 ЛОКАЛЬНЫЙ WI-FI:   http://{local_ips}:{PORT}")
+    print("=" * 70 + "\n")
+    log(f"Сервер слушает порт {PORT}. Токен: {TOKEN}")
     threading.Thread(target=_watch_server_file_and_restart, daemon=True).start()
     threading.Thread(target=_udp_mouse_worker, daemon=True).start()
     threading.Thread(target=_cloudflared_worker, daemon=True).start()

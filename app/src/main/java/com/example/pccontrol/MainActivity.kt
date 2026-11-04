@@ -1097,9 +1097,9 @@ fun PcControlMainApp(
         try {
             val timeout = if (host.contains("trycloudflare.com") || host.startsWith("https://")) 7500 else 4000
             val r = http(host.trim(), token.trim(), "/apps", "GET", timeoutMs = timeout)
-            tokenError = r.code == 401
             if (r.code == 200) {
                 pcOnline = true
+                tokenError = false
                 try {
                     val snap = parseStatusSnapshot(r.body)
                     apps = snap.apps
@@ -1118,8 +1118,16 @@ fun PcControlMainApp(
                     }
                 } catch (_: Exception) {
                 }
+            } else if (r.code == 401) {
+                // ПК доступен в сети, но токен неверен!
+                pcOnline = true
+                tokenError = true
+                status = "🔑 Ошибка: токен не совпадает с config.json на ПК!"
+                apps = emptyList()
             } else {
                 pcOnline = false
+                tokenError = false
+                status = "Ответ ПК: HTTP ${r.code}"
                 apps = emptyList()
             }
             if (currentTab == NavTab.APPS && r.code == 200) {
@@ -1208,7 +1216,93 @@ fun PcControlMainApp(
         }
     }
 
-        fun fetchLatestTunnelUrl() {
+            var diagnosticsReport by remember { mutableStateOf("") }
+    var isDiagnosing by remember { mutableStateOf(false) }
+
+    fun runDiagnostics() {
+        if (host.isBlank()) {
+            diagnosticsReport = "⚠️ Укажите адрес ПК для проверки связи."
+            return
+        }
+        isDiagnosing = true
+        diagnosticsReport = "🩺 Проверяю связь с ПК…"
+        scope.launch(Dispatchers.IO) {
+            val sb = StringBuilder()
+            sb.appendLine("=== РЕЗУЛЬТАТ ДИАГНОСТИКИ СВЯЗИ ===")
+            sb.appendLine("• Проверяемый адрес: $host")
+            val t0 = System.currentTimeMillis()
+            try {
+                val pingUrl = buildPcUrl(host, "/ping")
+                sb.appendLine("• Запрос к шлюзу: $pingUrl")
+                val conn = URL(pingUrl).openConnection() as HttpURLConnection
+                conn.connectTimeout = 6000
+                conn.readTimeout = 6000
+                conn.setRequestProperty("User-Agent", USER_AGENT)
+                val safeTok = if (token.all { it.code in 0x20..0x7E }) token else ""
+                conn.setRequestProperty("X-Token", safeTok)
+                val code = conn.responseCode
+                val elapsed = System.currentTimeMillis() - t0
+                sb.appendLine("• Ответ сервера: HTTP $code (время: ${elapsed} мс)")
+
+                if (code == 200) {
+                    val raw = conn.inputStream.bufferedReader().use { it.readText() }
+                    try {
+                        val json = JSONObject(raw)
+                        val authOk = json.optBoolean("authorized", false)
+                        val pc = json.optString("pc", "ПК")
+                        sb.appendLine("• Имя компьютера: $pc")
+                        if (authOk) {
+                            sb.appendLine("✅ УСПЕХ: Связь установлена, секретный токен ВЕРНЫЙ!")
+                            withContext(Dispatchers.Main) {
+                                pcOnline = true
+                                tokenError = false
+                                status = "ПК ($pc) на связи ✔ (${elapsed} мс)"
+                                scope.launch { refresh() }
+                            }
+                        } else {
+                            sb.appendLine("🔑 ОШИБКА АВТОРИЗАЦИИ: Компьютер доступен, но введён неверный токен!")
+                            sb.appendLine("👉 Откройте server.py или config.json на ПК и скопируйте токен оттуда.")
+                            withContext(Dispatchers.Main) {
+                                pcOnline = true
+                                tokenError = true
+                                status = "🔑 Неверный токен ПК! Проверьте в config.json"
+                            }
+                        }
+                    } catch (_: Exception) {
+                        sb.appendLine("✅ Сервер ответил 'pong' (связь есть)")
+                        withContext(Dispatchers.Main) {
+                            pcOnline = true
+                            scope.launch { refresh() }
+                        }
+                    }
+                } else if (code == 401) {
+                    sb.appendLine("🔑 ОШИБКА 401: Сервер найден, но токен подключения НЕВЕРЕН!")
+                    sb.appendLine("👉 Скопируйте токен из config.json на ПК в настройки приложения.")
+                    withContext(Dispatchers.Main) {
+                        pcOnline = true
+                        tokenError = true
+                        status = "🔑 Токен не совпадает с config.json на ПК"
+                    }
+                } else {
+                    sb.appendLine("⚠️ Неожиданный ответ сервера: HTTP $code")
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                val elapsed = System.currentTimeMillis() - t0
+                sb.appendLine("❌ СБОЙ ПОДКЛЮЧЕНИЯ (${elapsed} мс): ${e.localizedMessage ?: e.javaClass.simpleName}")
+                if (host.contains("trycloudflare.com")) {
+                    sb.appendLine("💡 Подсказка: возможно, мобильный оператор фильтрует trycloudflare.com.")
+                    sb.appendLine("   Попробуйте подключить телефон к домашнему Wi-Fi и нажать 'Найти ПК в Wi-Fi'.")
+                }
+            }
+            withContext(Dispatchers.Main) {
+                isDiagnosing = false
+                diagnosticsReport = sb.toString()
+            }
+        }
+    }
+
+    fun fetchLatestTunnelUrl() {
         if (token.isBlank()) {
             status = "Сначала укажите токен в настройках"
             return
@@ -2227,9 +2321,16 @@ fun PcControlMainApp(
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("⌨ Без Enter") { sendTypeText(enter = false) }
+                            CoolButton("Win+D 🖥️") { run("/media/win_d", refreshAfter = true) }
+                            CoolButton("Alt+Tab 🔄") { run("/media/alt_tab", refreshAfter = true) }
+                            CoolButton("Win+Tab 🗂️") { run("/media/win_tab", refreshAfter = true) }
+                            CoolButton("Диспетчер 📊") { run("/media/task_mgr", refreshAfter = true) }
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CoolButton("Ctrl+Z") { run("/media/ctrl_z", refreshAfter = false) }
                             CoolButton("Esc") { run("/media/key_esc", refreshAfter = false) }
                             CoolButton("Alt+F4") { run("/media/alt_f4", refreshAfter = true) }
+                            CoolButton("🔒 Блок") { run("/lock", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2756,6 +2857,29 @@ fun PcControlMainApp(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("🔄 Получить интернет-адрес с ПК (Cloudflare)", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { runDiagnostics() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isDiagnosing) "⏳ Проверяю связь…" else "🩺 Диагностика связи (Проверить ПК)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (diagnosticsReport.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = diagnosticsReport,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = if ("✅" in diagnosticsReport) Color(0xFF10B981) else if ("🔑" in diagnosticsReport) Color(0xFFF59E0B) else Color(0xFFFF5252),
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
                         }
                         OutlinedTextField(
                             value = token,

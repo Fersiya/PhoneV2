@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.pccontrol"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "4.9"
+        versionCode = 32
+        versionName = "5.0"
     }
 
     signingConfigs {
