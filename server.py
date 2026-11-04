@@ -2129,26 +2129,55 @@ _cloudflare_url = ""
 _cloudflare_proc = None
 
 def find_cloudflared_path() -> Optional[str]:
-    """Ищет исполняемый файл cloudflared в системе (PATH или стандартные папки установки MSI)."""
+    """Ищет исполняемый файл cloudflared в системе (PATH, папки установки MSI, Downloads или папка проекта)."""
     cand = shutil.which("cloudflared") or shutil.which("cloudflared.exe")
-    if cand and os.path.exists(cand):
+    if cand and os.path.isfile(cand):
         return cand
-    common_paths = [
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        # Папка проекта
+        os.path.join(script_dir, "cloudflared.exe"),
+        os.path.join(script_dir, "cloudflared-windows-amd64.exe"),
+        # Стандартные папки установки MSI (Cloudflare One)
+        os.path.expandvars(r"%ProgramFiles%\Cloudflare\cloudflared\cloudflared.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Cloudflare\cloudflared\cloudflared.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Cloudflare\cloudflared.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Cloudflare\cloudflared.exe"),
         os.path.expandvars(r"%ProgramFiles%\cloudflared\cloudflared.exe"),
         os.path.expandvars(r"%ProgramFiles(x86)%\cloudflared\cloudflared.exe"),
         os.path.expandvars(r"%LOCALAPPDATA%\Programs\cloudflared\cloudflared.exe"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe"),
+        # Папка Загрузки пользователя (если скачан Executable)
+        os.path.expandvars(r"%USERPROFILE%\Downloads\cloudflared.exe"),
+        os.path.expandvars(r"%USERPROFILE%\Downloads\cloudflared-windows-amd64.exe"),
     ]
-    for p in common_paths:
+    for p in candidates:
         if os.path.isfile(p):
             return p
+
+    # Рекурсивный поиск в Program Files\Cloudflare, если установлен в подпапку
+    for base in [os.path.expandvars(r"%ProgramFiles%\Cloudflare"), os.path.expandvars(r"%ProgramFiles(x86)%\Cloudflare")]:
+        if os.path.isdir(base):
+            try:
+                for root, _, files in os.walk(base):
+                    for f in files:
+                        if f.lower() in ("cloudflared.exe", "cloudflared-windows-amd64.exe"):
+                            return os.path.join(root, f)
+            except Exception:
+                pass
+
     return None
 
 def _cloudflared_worker():
     global _cloudflare_url, _cloudflare_proc
     cf_path = find_cloudflared_path()
     if not cf_path:
-        log("[Cloudflare Tunnel] cloudflared не обнаружен. Установите MSI с сайта Cloudflare для доступа без Tailscale.")
+        print("\n" + "-" * 60)
+        print("  [!] Cloudflare Tunnel: cloudflared.exe пока не найден.")
+        print("      Если вы установили MSI или скачали Executable,")
+        print("      просто скопируйте cloudflared.exe в эту папку рядом с server.py!")
+        print("-" * 60 + "\n")
+        log("[Cloudflare Tunnel] cloudflared.exe не найден.")
         return
 
     log(f"[Cloudflare Tunnel] Найден cloudflared: {cf_path}")

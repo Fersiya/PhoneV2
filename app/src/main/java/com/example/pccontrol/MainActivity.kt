@@ -1226,8 +1226,7 @@ fun PcControlMainApp(
                     withContext(Dispatchers.Main) {
                         host = foundHost
                         save()
-                        val tunnelNote = if (tunnelUrl.isNotBlank()) "
-Интернет-туннель: $tunnelUrl" else ""
+                        val tunnelNote = if (tunnelUrl.isNotBlank()) " (Туннель: $tunnelUrl)" else ""
                         status = "Найден ПК: $pcName ($foundHost) ✔$tunnelNote"
                         scope.launch { refresh() }
                     }
