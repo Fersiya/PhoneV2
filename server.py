@@ -2134,10 +2134,18 @@ def _udp_mouse_worker():
     log(f"[UDP] Высокоскоростной мышиный UDP-сервер активен на порту {PORT}")
     while True:
         try:
-            data, _ = sock.recvfrom(512)
+            data, addr = sock.recvfrom(512)
             if not data:
                 continue
             text = data.decode("utf-8", errors="ignore").strip()
+
+            # Автопоиск ПК в локальной Wi-Fi сети без Tailscale
+            if text == "PC_DISCOVERY_PING":
+                pc_name = socket.gethostname() or "ПК"
+                reply = f"PC_DISCOVERY_PONG:{pc_name}:{TOKEN}"
+                sock.sendto(reply.encode("utf-8"), addr)
+                continue
+
             parts = text.split(":", 2)
             if len(parts) < 3:
                 continue
@@ -2145,7 +2153,16 @@ def _udp_mouse_worker():
             if not hmac.compare_digest(token_cand.encode("utf-8"), TOKEN.encode("utf-8")):
                 continue
 
-            if cmd == "m":
+            # Мгновенное абсолютное следование курсора за пальцем (125+ Гц)
+            if cmd == "abs":
+                coords = args.split(",")
+                if len(coords) == 2:
+                    fnx = max(0.0, min(1.0, float(coords[0])))
+                    fny = max(0.0, min(1.0, float(coords[1])))
+                    ax = int(fnx * 65535)
+                    ay = int(fny * 65535)
+                    _send_inputs([_mouse_input(dx=ax, dy=ay, flags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)])
+            elif cmd == "m":
                 coords = args.split(",")
                 if len(coords) == 2:
                     dx = max(-2000, min(2000, int(coords[0])))

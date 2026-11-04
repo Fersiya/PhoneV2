@@ -975,7 +975,7 @@ fun PcControlMainApp(
     // Настройки трансляции и полноэкранный режим
     var showStreamFpsOverlay by remember { mutableStateOf(prefs.getBoolean("show_stream_fps_overlay", true)) }
     var isFullscreenStream by remember { mutableStateOf(false) }
-    var isFsControlsVisible by remember { mutableStateOf(true) }
+    var isFsControlsVisible by remember { mutableStateOf(false) }
     var isFsMouseMode by remember { mutableStateOf(false) }
 
     // Проводник файлов ПК
@@ -1138,6 +1138,93 @@ fun PcControlMainApp(
         }
     }
 
+        fun sendAbsMouse(nx: Float, ny: Float, click: Boolean = false) {
+        if (host.isBlank() || token.isBlank()) return
+        val nxStr = String.format(Locale.US, "%.4f", nx)
+        val nyStr = String.format(Locale.US, "%.4f", ny)
+        val cmd = if (click) "tap" else "abs"
+        val packetData = "$token:$cmd:$nxStr,$nyStr".toByteArray(Charsets.UTF_8)
+        scope.launch(Dispatchers.IO) {
+            try {
+                val socket = DatagramSocket()
+                val addr = InetAddress.getByName(host.trim())
+                val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
+                socket.send(packet)
+                socket.close()
+            } catch (_: Exception) {
+                val payload = JSONObject().apply {
+                    put("action", if (click) "abs_click" else "abs_move")
+                    put("nx", nxStr.toDouble())
+                    put("ny", nyStr.toDouble())
+                    if (streamAllMonitors) put("allMonitors", true)
+                }.toString()
+                try {
+                    http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 800)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun discoverLocalPc() {
+        status = "Поиск ПК в локальной сети Wi-Fi…"
+        scope.launch(Dispatchers.IO) {
+            var found = false
+            try {
+                val socket = DatagramSocket()
+                socket.broadcast = true
+                socket.soTimeout = 2500
+                val pingData = "PC_DISCOVERY_PING".toByteArray(Charsets.UTF_8)
+                val broadcastAddr = InetAddress.getByName("255.255.255.255")
+                val packet = DatagramPacket(pingData, pingData.size, broadcastAddr, PORT)
+                socket.send(packet)
+
+                val buf = ByteArray(512)
+                val replyPacket = DatagramPacket(buf, buf.size)
+                socket.receive(replyPacket)
+                val replyText = String(replyPacket.data, 0, replyPacket.length, Charsets.UTF_8).trim()
+                if (replyText.startsWith("PC_DISCOVERY_PONG:")) {
+                    val parts = replyText.split(":", limit = 3)
+                    val pcName = if (parts.size >= 2) parts[1] else "ПК"
+                    val foundToken = if (parts.size >= 3) parts[2] else ""
+                    val foundHost = replyPacket.address.hostAddress ?: ""
+                    withContext(Dispatchers.Main) {
+                        host = foundHost
+                        if (foundToken.isNotBlank()) token = foundToken
+                        save()
+                        status = "Найден ПК: $pcName ($foundHost) ✔"
+                        scope.launch { refresh() }
+                    }
+                    found = true
+                }
+                socket.close()
+            } catch (_: Exception) {}
+            if (!found) {
+                withContext(Dispatchers.Main) {
+                    status = "ПК в локальной сети не найден. Убедитесь, что server.py запущен."
+                }
+            }
+        }
+    }
+
+    fun openDownloadsFolder() {
+        try {
+            val intent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val uri = Uri.parse("content://com.android.externalstorage.documents/document/primary:Download")
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "vnd.android.document/directory")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                status = "Файл сохранён в системную папку Загрузки"
+            }
+        }
+    }
     fun sendMouseAction(action: String, dy: Int = 0, nx: Float? = null, ny: Float? = null) {
         if (host.isBlank() || token.isBlank()) return
         val payload = JSONObject().apply {
@@ -2354,12 +2441,12 @@ fun PcControlMainApp(
                                                 }
                                             } else if (downloadedUri != null) {
                                                 Button(
-                                                    onClick = { openDownloadedFile(entry.name, downloadedUri) },
+                                                    onClick = { openDownloadsFolder() },
                                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                     shape = RoundedCornerShape(8.dp)
                                                 ) {
-                                                    Text("📂 Открыть", fontSize = 11.sp, color = Color.White)
+                                                    Text("📂 В Загрузки", fontSize = 11.sp, color = Color.White)
                                                 }
                                             } else {
                                                 Button(
@@ -2705,32 +2792,24 @@ fun PcControlMainApp(
                 }
 
                 // Карточка настроек экрана и трансляции
+                // Автопоиск ПК в сети Wi-Fi (работа без Tailscale дома)
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Отображение FPS на трансляции", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(
-                                    "Показывать плашку с FPS и задержкой поверх экрана ПК",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Text("Поиск ПК в домашней сети", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Автоопределение IP и токена без Tailscale и ввода цифр", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Spacer(Modifier.size(8.dp))
-                            Switch(
-                                checked = showStreamFpsOverlay,
-                                onCheckedChange = {
-                                    showStreamFpsOverlay = it
-                                    prefs.edit().putBoolean("show_stream_fps_overlay", it).apply()
-                                }
-                            )
+                        }
+                        Button(
+                            onClick = { discoverLocalPc() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("🔍 Найти ПК в сети Wi-Fi", fontWeight = FontWeight.Bold)
                         }
                     }
-                }
+                }               }
             }
         }
     }
@@ -2829,14 +2908,36 @@ fun PcControlMainApp(
                             translationX = streamPanX
                             translationY = streamPanY
                         }
-                        .pointerInput(isFsMouseMode, host, token, mouseSensitivity) {
+                        .pointerInput(isFsMouseMode, host, token, streamZoom, streamPanX, streamPanY) {
                             if (isFsMouseMode) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    accDx += dragAmount.x * mouseSensitivity
-                                    accDy += dragAmount.y * mouseSensitivity
-                                }
+                                // Режим прямого ведения курсора под пальцем (абсолютные координаты 125 Гц)
+                                detectDragGestures(
+                                    onDragStart = { offset ->
+                                        val sw = size.width.toFloat()
+                                        val sh = size.height.toFloat()
+                                        if (sw > 0 && sh > 0) {
+                                            val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
+                                            val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
+                                            val nx = (localX / sw).coerceIn(0f, 1f)
+                                            val ny = (localY / sh).coerceIn(0f, 1f)
+                                            sendAbsMouse(nx, ny)
+                                        }
+                                    },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val sw = size.width.toFloat()
+                                        val sh = size.height.toFloat()
+                                        if (sw > 0 && sh > 0) {
+                                            val localX = (change.position.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
+                                            val localY = (change.position.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
+                                            val nx = (localX / sw).coerceIn(0f, 1f)
+                                            val ny = (localY / sh).coerceIn(0f, 1f)
+                                            sendAbsMouse(nx, ny)
+                                        }
+                                    }
+                                )
                             } else {
+                                // Режим зума и свободного панорамирования по рабочему столу
                                 detectTransformGestures { _, pan, zoom, _ ->
                                     if (zoom != 1f) {
                                         streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
@@ -2932,63 +3033,70 @@ fun PcControlMainApp(
                 }
             }
 
-            // Выдвижная плавающая панель управления
+            // Компактная полупрозрачная плавающая панель (не закрывает экран)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 20.dp)
+                    .padding(bottom = 12.dp)
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (isFsControlsVisible) {
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Black.copy(alpha = 0.85f),
-                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
-                            modifier = Modifier.padding(horizontal = 12.dp)
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color.Black.copy(alpha = 0.75f),
+                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f)),
+                            modifier = Modifier.padding(horizontal = 6.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ЛКМ", fontSize = 12.sp) }
-                                OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ПКМ", fontSize = 12.sp) }
-                                OutlinedButton(onClick = { sendMouseAction("double") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("2×", fontSize = 12.sp) }
+                                OutlinedButton(
+                                    onClick = { isFsMouseMode = !isFsMouseMode },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = if (isFsMouseMode) ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF00E5FF).copy(alpha = 0.25f)) else ButtonDefaults.outlinedButtonColors()
+                                ) {
+                                    Text(if (isFsMouseMode) "🎯 Мышь" else "✋ Обзор", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isFsMouseMode) Color(0xFF00E5FF) else Color.White)
+                                }
+                                OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("ЛКМ", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("ПКМ", fontSize = 11.sp) }
                                 HoldScrollButton("⬆") { sendMouseAction("scroll", dy = 3) }
                                 HoldScrollButton("⬇") { sendMouseAction("scroll", dy = -3) }
-                                OutlinedButton(onClick = {
-                                    streamZoom = (streamZoom - 0.5f).coerceAtLeast(1f)
-                                    if (streamZoom == 1f) { streamPanX = 0f; streamPanY = 0f }
-                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍-", fontSize = 12.sp) }
-                                OutlinedButton(onClick = { streamZoom = (streamZoom + 0.5f).coerceAtMost(5f) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍+", fontSize = 12.sp) }
                                 OutlinedButton(onClick = {
                                     streamZoom = 1f
                                     streamPanX = 0f
                                     streamPanY = 0f
-                                }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("1×", fontSize = 12.sp) }
+                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("1×", fontSize = 11.sp) }
                                 OutlinedButton(onClick = {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
-                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
-                                    Text(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS", fontSize = 11.sp)
+                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) {
+                                    Text(if (showStreamFpsOverlay) "👁" else "👁‍🗨", fontSize = 11.sp)
                                 }
-                                OutlinedButton(onClick = { isFullscreenStream = false }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))) { Text("✕ Выйти", fontSize = 12.sp) }
+                                OutlinedButton(
+                                    onClick = { isFullscreenStream = false },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))
+                                ) { Text("✕", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
                     }
                     Surface(
                         shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.75f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                        color = Color.Black.copy(alpha = 0.65f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(28.dp)
                             .clickable { isFsControlsVisible = !isFsControlsVisible }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(if (isFsControlsVisible) "▼" else "▲", color = Color.White, fontSize = 14.sp)
+                            Text(if (isFsControlsVisible) "▼" else "▲", color = Color.White, fontSize = 12.sp)
                         }
                     }
                 }
