@@ -731,18 +731,15 @@ private fun RowScope.HoldScrollButton(
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             while (isActive && isHolding) {
                 onScroll()
-                delay(75L) // Непрерывный плавный скролл при удержании кнопки
+                delay(70L) // Непрерывный плавный скролл при удержании
             }
         }
     }
 
-    OutlinedButton(
-        onClick = {},
-        contentPadding = KeyPadding,
+    Surface(
         shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = if (isHolding) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-        ),
+        color = if (isHolding) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
         modifier = Modifier
             .weight(weight)
             .pointerInput(Unit) {
@@ -751,11 +748,17 @@ private fun RowScope.HoldScrollButton(
                         isHolding = true
                         tryAwaitRelease()
                         isHolding = false
+                    },
+                    onTap = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onScroll()
                     }
                 )
             }
     ) {
-        Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Normal)
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+            Text(text, textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Medium)
+        }
     }
 }
 
@@ -1138,7 +1141,11 @@ fun PcControlMainApp(
         }
     }
 
-        fun sendAbsMouse(nx: Float, ny: Float, click: Boolean = false) {
+        var cachedUdpIp: InetAddress? = null
+    var cachedUdpHost = ""
+    val udpMouseSocket by lazy { try { DatagramSocket() } catch (_: Exception) { null } }
+
+    fun sendAbsMouse(nx: Float, ny: Float, click: Boolean = false) {
         if (host.isBlank() || token.isBlank()) return
         val nxStr = String.format(Locale.US, "%.4f", nx)
         val nyStr = String.format(Locale.US, "%.4f", ny)
@@ -1146,11 +1153,14 @@ fun PcControlMainApp(
         val packetData = "$token:$cmd:$nxStr,$nyStr".toByteArray(Charsets.UTF_8)
         scope.launch(Dispatchers.IO) {
             try {
-                val socket = DatagramSocket()
-                val addr = InetAddress.getByName(host.trim())
+                if (cachedUdpHost != host.trim() || cachedUdpIp == null) {
+                    cachedUdpIp = InetAddress.getByName(host.trim())
+                    cachedUdpHost = host.trim()
+                }
+                val addr = cachedUdpIp ?: return@launch
+                val sock = udpMouseSocket ?: return@launch
                 val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
-                socket.send(packet)
-                socket.close()
+                sock.send(packet)
             } catch (_: Exception) {
                 val payload = JSONObject().apply {
                     put("action", if (click) "abs_click" else "abs_move")
@@ -1185,11 +1195,9 @@ fun PcControlMainApp(
                 if (replyText.startsWith("PC_DISCOVERY_PONG:")) {
                     val parts = replyText.split(":", limit = 3)
                     val pcName = if (parts.size >= 2) parts[1] else "ПК"
-                    val foundToken = if (parts.size >= 3) parts[2] else ""
                     val foundHost = replyPacket.address.hostAddress ?: ""
                     withContext(Dispatchers.Main) {
                         host = foundHost
-                        if (foundToken.isNotBlank()) token = foundToken
                         save()
                         status = "Найден ПК: $pcName ($foundHost) ✔"
                         scope.launch { refresh() }
@@ -2429,7 +2437,7 @@ fun PcControlMainApp(
                                             }
                                         } else {
                                             val isDownloading = entry.name in downloadingFiles
-                                            val downloadedUri = downloadedFiles[entry.name]
+                                            val isDownloaded = entry.name in downloadedFiles
                                             if (isDownloading) {
                                                 Button(
                                                     onClick = {},
@@ -2439,22 +2447,25 @@ fun PcControlMainApp(
                                                 ) {
                                                     Text("⏳ Скачивание…", fontSize = 11.sp)
                                                 }
-                                            } else if (downloadedUri != null) {
-                                                Button(
-                                                    onClick = { openDownloadsFolder() },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("📂 В Загрузки", fontSize = 11.sp, color = Color.White)
-                                                }
                                             } else {
-                                                Button(
-                                                    onClick = { downloadFileFromPc(entry) },
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("⬇ Скачать", fontSize = 11.sp)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    if (isDownloaded) {
+                                                        Button(
+                                                            onClick = { openDownloadsFolder() },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            shape = RoundedCornerShape(8.dp)
+                                                        ) {
+                                                            Text("📂 В папку", fontSize = 11.sp, color = Color.White)
+                                                        }
+                                                    }
+                                                    OutlinedButton(
+                                                        onClick = { downloadFileFromPc(entry) },
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Text(if (isDownloaded) "⬇ Снова" else "⬇ Скачать", fontSize = 11.sp)
+                                                    }
                                                 }
                                             }
                                         }
@@ -2745,7 +2756,7 @@ fun PcControlMainApp(
                                             val nowSec = System.currentTimeMillis() / 1000L
                                             prefs.edit()
                                                 .putBoolean("auto_sync_media", true)
-                                                .putLong("sync_start_timestamp", nowSec)
+                                                .putLong("sync_start_timestamp_${activeProfileId}", nowSec)
                                                 .apply()
                                             scope.launch {
                                                 syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
@@ -2908,7 +2919,7 @@ fun PcControlMainApp(
                             translationX = streamPanX
                             translationY = streamPanY
                         }
-                        .pointerInput(isFsMouseMode, host, token, streamZoom, streamPanX, streamPanY) {
+                        .pointerInput(isFsMouseMode, host, token) {
                             if (isFsMouseMode) {
                                 // Режим прямого ведения курсора под пальцем (абсолютные координаты 125 Гц)
                                 detectDragGestures(

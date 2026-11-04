@@ -1904,7 +1904,10 @@ class Handler(BaseHTTPRequestHandler):
                 with open(temp_path, "wb") as out_f:
                     if is_chunked:
                         while True:
-                            line = self.rfile.readline().strip()
+                            line = self.rfile.readline()
+                            if not line:
+                                break  # EOF / клиент оборвал соединение
+                            line = line.strip()
                             if not line:
                                 continue
                             try:
@@ -1984,7 +1987,7 @@ class Handler(BaseHTTPRequestHandler):
                 mins = int(data.get("minutes", 30))
                 act = str(data.get("action", "shutdown"))
             except Exception:
-                mins, act = 30, "shutdown"
+                return self._reply(400, "некорректный JSON таймера")
             code, text = set_custom_timer(mins, act)
             log(f"timer ({mins}m, {act}): {code} {text}")
             return self._reply(code, text)
@@ -2142,7 +2145,7 @@ def _udp_mouse_worker():
             # Автопоиск ПК в локальной Wi-Fi сети без Tailscale
             if text == "PC_DISCOVERY_PING":
                 pc_name = socket.gethostname() or "ПК"
-                reply = f"PC_DISCOVERY_PONG:{pc_name}:{TOKEN}"
+                reply = f"PC_DISCOVERY_PONG:{pc_name}"
                 sock.sendto(reply.encode("utf-8"), addr)
                 continue
 
@@ -2162,6 +2165,13 @@ def _udp_mouse_worker():
                     ax = int(fnx * 65535)
                     ay = int(fny * 65535)
                     _send_inputs([_mouse_input(dx=ax, dy=ay, flags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)])
+            elif cmd == "scroll":
+                try:
+                    dy = int(args)
+                    if dy:
+                        _send_inputs([_mouse_input(data=dy * 120, flags=MOUSEEVENTF_WHEEL)])
+                except Exception:
+                    pass
             elif cmd == "m":
                 coords = args.split(",")
                 if len(coords) == 2:
