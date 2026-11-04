@@ -976,6 +976,7 @@ fun PcControlMainApp(
     var showStreamFpsOverlay by remember { mutableStateOf(prefs.getBoolean("show_stream_fps_overlay", true)) }
     var isFullscreenStream by remember { mutableStateOf(false) }
     var isFsControlsVisible by remember { mutableStateOf(true) }
+    var isFsMouseMode by remember { mutableStateOf(false) }
 
     // Проводник файлов ПК
     var fileBrowsePath by remember { mutableStateOf("D:\\") }
@@ -1451,7 +1452,7 @@ fun PcControlMainApp(
             var savedUri: Uri? = null
             val res = withContext(Dispatchers.IO) {
                 try {
-                    val fullPath = if (fileBrowsePath.endsWith("\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\${entry.name}"
+                                                            val fullPath = if (fileBrowsePath.endsWith('/') || fileBrowsePath.endsWith(File.separatorChar)) fileBrowsePath + entry.name else fileBrowsePath + File.separator + entry.name
                     val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
                     val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
@@ -2828,77 +2829,80 @@ fun PcControlMainApp(
                             translationX = streamPanX
                             translationY = streamPanY
                         }
-                        .pointerInput(host, token, mouseSensitivity, streamZoom, streamPanX, streamPanY) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                val downTime = System.currentTimeMillis()
-                                val startPos = down.position
-                                var isMultiTouch = false
-                                var hasMoved = false
-
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val active = event.changes.filter { it.pressed }
-                                    if (active.isEmpty()) {
-                                        val duration = System.currentTimeMillis() - downTime
-                                        if (!isMultiTouch && !hasMoved && duration < 300) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            if (size.width > 0 && size.height > 0) {
-                                                val localX = (startPos.x - size.width / 2f - streamPanX) / streamZoom + size.width / 2f
-                                                val localY = (startPos.y - size.height / 2f - streamPanY) / streamZoom + size.height / 2f
-                                                val nx = (localX / size.width.toFloat()).coerceIn(0f, 1f)
-                                                val ny = (localY / size.height.toFloat()).coerceIn(0f, 1f)
-                                                sendMouseAction("abs_click", nx = nx, ny = ny)
-                                            } else {
-                                                sendMouseAction("left")
-                                            }
-                                        }
-                                        break
+                        .pointerInput(isFsMouseMode, host, token, mouseSensitivity) {
+                            if (isFsMouseMode) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    accDx += dragAmount.x * mouseSensitivity
+                                    accDy += dragAmount.y * mouseSensitivity
+                                }
+                            } else {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    if (zoom != 1f) {
+                                        streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
                                     }
-
-                                    if (active.size >= 2) {
-                                        // ДВА ПАЛЬЦА: масштабирование (зум) и свободное перемещение по увеличенному экрану
-                                        isMultiTouch = true
-                                        hasMoved = true
-                                        val p0 = active[0]
-                                        val p1 = active[1]
-                                        val prevCenter = (p0.previousPosition + p1.previousPosition) / 2f
-                                        val currCenter = (p0.position + p1.position) / 2f
-                                        val panDelta = currCenter - prevCenter
-
-                                        val prevDist = kotlin.math.hypot(p0.previousPosition.x - p1.previousPosition.x, p0.previousPosition.y - p1.previousPosition.y)
-                                        val currDist = kotlin.math.hypot(p0.position.x - p1.position.x, p0.position.y - p1.position.y)
-                                        if (prevDist > 1f && currDist > 1f) {
-                                            val scale = currDist / prevDist
-                                            streamZoom = (streamZoom * scale).coerceIn(1f, 5f)
-                                        }
-
-                                        val maxPanX = (size.width * (streamZoom - 1f)) / 2f
-                                        val maxPanY = (size.height * (streamZoom - 1f)) / 2f
-                                        if (maxPanX > 0f) {
-                                            streamPanX = (streamPanX + panDelta.x).coerceIn(-maxPanX, maxPanX)
-                                        } else {
-                                            streamPanX = 0f
-                                        }
-                                        if (maxPanY > 0f) {
-                                            streamPanY = (streamPanY + panDelta.y).coerceIn(-maxPanY, maxPanY)
-                                        } else {
-                                            streamPanY = 0f
-                                        }
-                                        active.forEach { it.consume() }
-                                    } else if (active.size == 1 && !isMultiTouch) {
-                                        // ОДИН ПАЛЕЦ: плавное ведение курсора мыши на ПК через UDP
-                                        val p = active[0]
-                                        val diff = p.position - p.previousPosition
-                                        if (kotlin.math.hypot(diff.x, diff.y) > 1.2f) {
-                                            hasMoved = true
-                                            accDx += diff.x * mouseSensitivity
-                                            accDy += diff.y * mouseSensitivity
-                                            p.consume()
-                                        }
+                                    val sw = size.width.toFloat()
+                                    val sh = size.height.toFloat()
+                                    val maxPanX = (sw * (streamZoom - 1f)) / 2f
+                                    val maxPanY = (sh * (streamZoom - 1f)) / 2f
+                                    if (maxPanX > 0f) {
+                                        streamPanX = (streamPanX + pan.x).coerceIn(-maxPanX, maxPanX)
+                                    } else {
+                                        streamPanX = 0f
+                                    }
+                                    if (maxPanY > 0f) {
+                                        streamPanY = (streamPanY + pan.y).coerceIn(-maxPanY, maxPanY)
+                                    } else {
+                                        streamPanY = 0f
                                     }
                                 }
                             }
+                        }
+                        .pointerInput(host, token, streamZoom, streamPanX, streamPanY) {
+                            detectTapGestures(
+                                onTap = { offset ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (size.width > 0 && size.height > 0) {
+                                        val sw = size.width.toFloat()
+                                        val sh = size.height.toFloat()
+                                        val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
+                                        val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
+                                        val nx = (localX / sw).coerceIn(0f, 1f)
+                                        val ny = (localY / sh).coerceIn(0f, 1f)
+                                        sendMouseAction("abs_click", nx = nx, ny = ny)
+                                    } else {
+                                        sendMouseAction("left")
+                                    }
+                                },
+                                onDoubleTap = { offset ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (size.width > 0 && size.height > 0) {
+                                        val sw = size.width.toFloat()
+                                        val sh = size.height.toFloat()
+                                        val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
+                                        val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
+                                        val nx = (localX / sw).coerceIn(0f, 1f)
+                                        val ny = (localY / sh).coerceIn(0f, 1f)
+                                        sendMouseAction("abs_double", nx = nx, ny = ny)
+                                    } else {
+                                        sendMouseAction("double")
+                                    }
+                                },
+                                onLongPress = { offset ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (size.width > 0 && size.height > 0) {
+                                        val sw = size.width.toFloat()
+                                        val sh = size.height.toFloat()
+                                        val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
+                                        val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
+                                        val nx = (localX / sw).coerceIn(0f, 1f)
+                                        val ny = (localY / sh).coerceIn(0f, 1f)
+                                        sendMouseAction("abs_right", nx = nx, ny = ny)
+                                    } else {
+                                        sendMouseAction("right")
+                                    }
+                                }
+                            )
                         }
                 )
             } else {
