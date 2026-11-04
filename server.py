@@ -12,6 +12,8 @@
 import ctypes
 import hmac
 import json
+import re
+from typing import Optional, List, Dict, Any
 import os
 import secrets
 import shutil
@@ -2128,7 +2130,7 @@ def get_local_ips() -> list:
 _cloudflare_url = ""
 _cloudflare_proc = None
 
-def find_cloudflared_path() -> Optional[str]:
+def find_cloudflared_path():
     """Ищет исполняемый файл cloudflared в системе (PATH, папки установки MSI, Downloads или папка проекта)."""
     cand = shutil.which("cloudflared") or shutil.which("cloudflared.exe")
     if cand and os.path.isfile(cand):
@@ -2211,6 +2213,7 @@ def _cloudflared_worker():
                         except Exception:
                             pass
                         print("\n" + "=" * 70)
+                        log(f"[Cloudflare Tunnel] Внешний интернет-адрес: {found_url}")
                         print("  🌐 ВНЕШНИЙ ИНТЕРНЕТ-ТУННЕЛЬ АКТИВЕН (Cloudflare Tunnel):")
                         print("  Адрес для телефона (4G/5G / Вне дома):")
                         print(f"  -> {found_url}")

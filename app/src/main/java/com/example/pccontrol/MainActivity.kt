@@ -1090,7 +1090,8 @@ fun PcControlMainApp(
             return
         }
         try {
-            val r = http(host.trim(), token.trim(), "/apps", "GET", timeoutMs = 4000)
+            val timeout = if (host.contains("trycloudflare.com") || host.startsWith("https://")) 7500 else 4000
+            val r = http(host.trim(), token.trim(), "/apps", "GET", timeoutMs = timeout)
             tokenError = r.code == 401
             if (r.code == 200) {
                 pcOnline = true
@@ -1124,6 +1125,7 @@ fun PcControlMainApp(
             pcOnline = false
             tokenError = false
             apps = emptyList()
+            status = "Сбой подключения: ${e.localizedMessage ?: e.javaClass.simpleName}"
         }
     }
 
@@ -1197,6 +1199,42 @@ fun PcControlMainApp(
                         http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 600)
                     } catch (_: Exception) {}
                 }
+            }
+        }
+    }
+
+        fun fetchLatestTunnelUrl() {
+        if (token.isBlank()) {
+            status = "Сначала укажите токен в настройках"
+            return
+        }
+        status = "Получаю интернет-адрес с ПК…"
+        scope.launch(Dispatchers.IO) {
+            try {
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                val hashBytes = digest.digest(token.trim().toByteArray(Charsets.UTF_8))
+                val channelId = "pcremote_" + hashBytes.joinToString("") { "%02x".format(it) }.take(16)
+                val conn = URL("https://ntfy.sh/$channelId/raw").openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                if (conn.responseCode == 200) {
+                    val raw = conn.inputStream.bufferedReader().use { it.readText() }
+                    val latestUrl = raw.lines().lastOrNull { it.contains("trycloudflare.com") }?.trim() ?: ""
+                    if (latestUrl.startsWith("https://")) {
+                        withContext(Dispatchers.Main) {
+                            host = latestUrl
+                            save()
+                            status = "Адрес ПК обновлен: $latestUrl ✔"
+                            scope.launch { refresh() }
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) { status = "ПК пока не передал интернет-адрес" }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { status = "Сервер не найден в канале" }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "Ошибка получения: ${e.localizedMessage ?: e.javaClass.simpleName}" }
             }
         }
     }
@@ -2702,11 +2740,18 @@ fun PcControlMainApp(
                         OutlinedTextField(
                             value = host,
                             onValueChange = { host = it },
-                            label = { Text("Адрес ПК (Tailscale IP или локальный)") },
+                            label = { Text("Адрес ПК (IP или Cloudflare адрес)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+                        OutlinedButton(
+                            onClick = { fetchLatestTunnelUrl() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("🔄 Получить интернет-адрес с ПК (Cloudflare)", fontSize = 12.sp)
+                        }
                         OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
