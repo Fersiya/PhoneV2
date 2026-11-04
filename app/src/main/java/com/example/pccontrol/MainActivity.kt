@@ -2809,7 +2809,7 @@ fun PcControlMainApp(
                             Text("🔍 Найти ПК в сети Wi-Fi", fontWeight = FontWeight.Bold)
                         }
                     }
-                }               }
+                }
             }
         }
     }
