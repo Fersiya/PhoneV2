@@ -115,6 +115,7 @@ import java.net.NetworkInterface
 import java.net.URL
 import java.util.Collections
 import java.util.Locale
+import kotlin.math.round
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -2101,8 +2102,9 @@ fun PcControlMainApp(
                                             Column {
                                                 Text(entry.name, fontSize = 13.sp, fontWeight = if (entry.isDir) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 if (!entry.isDir) {
-                                                    val sizeMb = round(entry.size / (1024.0 * 1024.0) * 10) / 10.0
-                                                    Text(if (sizeMb >= 1.0) "$sizeMb МБ" else "${entry.size / 1024} КБ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    val sizeMb = entry.size / (1024.0 * 1024.0)
+                                                    val sizeText = if (sizeMb >= 1.0) String.format(Locale.US, "%.1f МБ", sizeMb) else "${entry.size / 1024} КБ"
+                                                    Text(sizeText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
                                         }
