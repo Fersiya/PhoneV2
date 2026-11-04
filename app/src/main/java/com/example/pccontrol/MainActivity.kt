@@ -63,6 +63,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Switch
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.sync.Mutex
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -71,6 +72,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import org.json.JSONArray
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -185,7 +188,32 @@ enum class NavTab(val title: String, val icon: String) {
 data class HttpResult(val code: Int, val body: String)
 data class AppItem(val id: String, val title: String, val canClose: Boolean, val running: Boolean)
 data class WindowItem(val hwnd: Long, val title: String, val process: String, val path: String, val active: Boolean, val minimized: Boolean)
-data class PcStatusSnapshot(val apps: List<AppItem>, val activeWindow: String, val ramPercent: Int, val shutdownRemainingSec: Int, val shutdownActive: Boolean, val volume: Int = -1)
+data class DiskItem(val drive: String, val totalGb: Double, val freeGb: Double, val usedPercent: Int)
+
+data class PcStatusSnapshot(
+    val apps: List<AppItem>,
+    val activeWindow: String,
+    val ramPercent: Int,
+    val ramTotalGb: Double = 0.0,
+    val ramUsedGb: Double = 0.0,
+    val cpuPercent: Int = 0,
+    val uptimeSec: Int = 0,
+    val disks: List<DiskItem> = emptyList(),
+    val shutdownRemainingSec: Int,
+    val shutdownActive: Boolean,
+    val volume: Int = -1
+)
+
+data class FileEntry(val name: String, val isDir: Boolean, val size: Long, val mtime: Long)
+data class BrowseResult(val path: String, val parent: String, val drives: List<String>, val entries: List<FileEntry>)
+
+data class PcProfile(
+    val id: String,
+    val name: String,
+    val host: String,
+    val token: String,
+    val mac: String
+)
 data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val hash: String, val size: Long)
 data class OtaCheckResult(val update: UpdateInfo?, val message: String)
 
@@ -203,7 +231,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.8"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "3.0"
     } catch (_: Exception) {
         "0.0"
     }
@@ -249,7 +277,7 @@ suspend fun runMjpegStream(
     width: Int,
     quality: Int,
     allMonitors: Boolean,
-    onFrame: (ImageBitmap) -> Unit
+    onFrame: (ImageBitmap, Int, Long) -> Unit
 ) = withContext(Dispatchers.IO) {
     val monParam = if (allMonitors) "all" else "0"
     val conn = URL("http://$host:$PORT/stream?fps=$fps&w=$width&q=$quality&m=$monParam").openConnection() as HttpURLConnection
@@ -261,11 +289,16 @@ suspend fun runMjpegStream(
         conn.setRequestProperty("X-Token", safeToken)
         if (conn.responseCode != 200) return@withContext
         val stream = conn.inputStream.buffered(16384)
-        var reusableBitmap: Bitmap? = null
+        var bufferA: Bitmap? = null
+        var bufferB: Bitmap? = null
+        var useBufferA = true
         val opts = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.RGB_565
             inMutable = true
         }
+        var frameCount = 0
+        var lastFpsTime = System.currentTimeMillis()
+        var calcFps = fps
         val lineBuf = java.io.ByteArrayOutputStream(128)
 
         fun readLineAscii(): String? {
@@ -283,6 +316,7 @@ suspend fun runMjpegStream(
         }
 
         while (coroutineContext.isActive) {
+            val frameStartMs = System.currentTimeMillis()
             var contentLength = -1
             while (coroutineContext.isActive) {
                 val line = readLineAscii() ?: return@withContext
@@ -308,7 +342,7 @@ suspend fun runMjpegStream(
                     if (b == -1) break
                     skip++
                 }
-                opts.inBitmap = reusableBitmap
+                opts.inBitmap = if (useBufferA) bufferA else bufferB
                 val bmp = try {
                     BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
                 } catch (_: IllegalArgumentException) {
@@ -316,10 +350,21 @@ suspend fun runMjpegStream(
                     BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
                 }
                 if (bmp != null) {
-                    reusableBitmap = bmp
+                    if (useBufferA) bufferA = bmp else bufferB = bmp
+                    useBufferA = !useBufferA
                     val img = bmp.asImageBitmap()
+
+                    frameCount++
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs - lastFpsTime >= 1000) {
+                        calcFps = frameCount
+                        frameCount = 0
+                        lastFpsTime = nowMs
+                    }
+                    val currentPing = nowMs - frameStartMs
+
                     withContext(Dispatchers.Main) {
-                        onFrame(img)
+                        onFrame(img, calcFps, currentPing)
                     }
                 }
             }
@@ -530,14 +575,47 @@ fun parseStatusSnapshot(json: String): PcStatusSnapshot {
     }
     val remSec = root.optInt("shutdownRemainingSec", 0)
     val active = root.optBoolean("shutdownActive", remSec > 0)
+
+    val disksArr = root.optJSONArray("disks")
+    val diskList = if (disksArr != null) {
+        List(disksArr.length()) { i ->
+            val d = disksArr.getJSONObject(i)
+            DiskItem(
+                drive = d.optString("drive", ""),
+                totalGb = d.optDouble("totalGb", 0.0),
+                freeGb = d.optDouble("freeGb", 0.0),
+                usedPercent = d.optInt("usedPercent", 0)
+            )
+        }
+    } else emptyList()
+
     return PcStatusSnapshot(
         apps = appList,
         activeWindow = root.optString("activeWindow", ""),
         ramPercent = root.optInt("ramPercent", 0),
+        ramTotalGb = root.optDouble("ramTotalGb", 0.0),
+        ramUsedGb = root.optDouble("ramUsedGb", 0.0),
+        cpuPercent = root.optInt("cpuPercent", 0),
+        uptimeSec = root.optInt("uptimeSec", 0),
+        disks = diskList,
         shutdownRemainingSec = remSec,
         shutdownActive = active,
         volume = root.optInt("volume", -1)
     )
+}
+
+fun parseBrowseResult(json: String): BrowseResult {
+    val root = JSONObject(json)
+    val path = root.optString("path", "")
+    val parent = root.optString("parent", "")
+    val drivesArr = root.optJSONArray("drives")
+    val drives = if (drivesArr != null) List(drivesArr.length()) { drivesArr.getString(it) } else emptyList()
+    val entriesArr = root.optJSONArray("entries")
+    val entries = if (entriesArr != null) List(entriesArr.length()) { i ->
+        val o = entriesArr.getJSONObject(i)
+        FileEntry(o.optString("name"), o.optBoolean("isDir"), o.optLong("size"), o.optLong("mtime"))
+    } else emptyList()
+    return BrowseResult(path, parent, drives, entries)
 }
 
 fun parseOpenWindows(json: String): List<WindowItem> {
@@ -629,12 +707,15 @@ private fun RowScope.CoolButton(
     }
 }
 
+val mediaSyncMutex = Mutex()
+
 suspend fun uploadMediaFile(
     context: Context,
     host: String,
     token: String,
     uri: Uri,
-    displayName: String
+    displayName: String,
+    knownSize: Long = -1L
 ): Boolean = withContext(Dispatchers.IO) {
     try {
         val encodedName = java.net.URLEncoder.encode(displayName, "UTF-8")
@@ -649,9 +730,11 @@ suspend fun uploadMediaFile(
         conn.doOutput = true
 
         val stream = context.contentResolver.openInputStream(uri) ?: return@withContext false
-        val size = try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-        } catch (_: Exception) { -1L }
+        val size = if (knownSize > 0) knownSize else {
+            try {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+            } catch (_: Exception) { -1L }
+        }
 
         if (size > 0) {
             conn.setFixedLengthStreamingMode(size)
@@ -683,52 +766,60 @@ suspend fun syncPendingMedia(
     token: String,
     onStatus: (String) -> Unit
 ): Int = withContext(Dispatchers.IO) {
-    if (host.isBlank() || token.isBlank()) return@withContext 0
-    val prefs = context.getSharedPreferences("pc_control_media", Context.MODE_PRIVATE)
-    val uploadedSet = prefs.getStringSet("uploaded_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+    if (!mediaSyncMutex.tryLock()) return@withContext 0
+    try {
+        if (host.isBlank() || token.isBlank()) return@withContext 0
+        val prefs = context.getSharedPreferences("pc_control_media", Context.MODE_PRIVATE)
+        val uploadedSet = prefs.getStringSet("uploaded_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
 
-    val urisToQuery = listOf(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-    )
+        // Точка отсчёта: загружать СТРОГО только те фото, которые сделаны после момента включения!
+        var syncStartTimestamp = prefs.getLong("sync_start_timestamp", 0L)
+        if (syncStartTimestamp <= 0L) {
+            syncStartTimestamp = System.currentTimeMillis() / 1000L
+            prefs.edit().putLong("sync_start_timestamp", syncStartTimestamp).apply()
+        }
 
-    var uploadedCount = 0
-    for (contentUri in urisToQuery) {
         val proj = arrayOf(
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.DATE_ADDED
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.SIZE,
+            MediaStore.Images.Media.DATE_ADDED
         )
+        // Фильтр: ТОЛЬКО фото с датой создания >= времени включения автозагрузки!
+        val selection = "${MediaStore.Images.Media.DATE_ADDED} >= ?"
+        val selectionArgs = arrayOf(syncStartTimestamp.toString())
+
         val cursor = try {
             context.contentResolver.query(
-                contentUri,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 proj,
-                null,
-                null,
-                "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+                selection,
+                selectionArgs,
+                "${MediaStore.Images.Media.DATE_ADDED} ASC"
             )
         } catch (_: Exception) {
             null
         }
 
+        var uploadedCount = 0
         cursor?.use { c ->
-            val idCol = c.getColumnIndex(MediaStore.MediaColumns._ID)
-            val nameCol = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-            var checked = 0
-            while (c.moveToNext() && checked < 50) {
-                checked++
+            val idCol = c.getColumnIndex(MediaStore.Images.Media._ID)
+            val nameCol = c.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+            val sizeCol = c.getColumnIndex(MediaStore.Images.Media.SIZE)
+            while (c.moveToNext()) {
                 val id = c.getLong(idCol)
-                val idStr = "${contentUri.lastPathSegment}_$id"
+                val idStr = "img_$id"
                 if (uploadedSet.contains(idStr)) continue
 
-                val name = c.getString(nameCol) ?: "media_$id.jpg"
-                val itemUri = ContentUris.withAppendedId(contentUri, id)
+                val name = c.getString(nameCol) ?: "photo_$id.jpg"
+                val size = c.getLong(sizeCol)
+                val itemUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
                 withContext(Dispatchers.Main) {
-                    onStatus("Отправляю $name на ПК…")
+                    onStatus("Отправляю фото $name на ПК…")
                 }
 
-                val ok = uploadMediaFile(context, host, token, itemUri, name)
+                val ok = uploadMediaFile(context, host, token, itemUri, name, size)
                 if (ok) {
                     uploadedSet.add(idStr)
                     prefs.edit().putStringSet("uploaded_ids", uploadedSet).apply()
@@ -736,13 +827,15 @@ suspend fun syncPendingMedia(
                 }
             }
         }
-    }
-    if (uploadedCount > 0) {
-        withContext(Dispatchers.Main) {
-            onStatus("Отправлено новых файлов: $uploadedCount ✔")
+        if (uploadedCount > 0) {
+            withContext(Dispatchers.Main) {
+                onStatus("Отправлено новых фото: $uploadedCount ✔")
+            }
         }
+        uploadedCount
+    } finally {
+        mediaSyncMutex.unlock()
     }
-    uploadedCount
 }
 
 @Composable
@@ -783,6 +876,50 @@ fun PcControlMainApp(
 
     // Текущая вкладка навигации
     var currentTab by remember { mutableStateOf(if (host.isBlank() || token.isBlank()) NavTab.SETTINGS else NavTab.SCREEN) }
+
+    // Live HUD трансляции
+    var liveStreamFps by remember { mutableIntStateOf(0) }
+    var liveStreamPing by remember { mutableLongStateOf(0L) }
+
+    // Мониторинг ПК
+    var cpuPercent by remember { mutableIntStateOf(0) }
+    var uptimeSec by remember { mutableIntStateOf(0) }
+    var ramTotalGb by remember { mutableStateOf(0.0) }
+    var ramUsedGb by remember { mutableStateOf(0.0) }
+    var disks by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
+
+    // Проводник файлов ПК
+    var fileBrowsePath by remember { mutableStateOf("D:\\") }
+    var fileBrowseParent by remember { mutableStateOf("") }
+    var fileBrowseDrives by remember { mutableStateOf<List<String>>(listOf("C:", "D:")) }
+    var fileBrowseEntries by remember { mutableStateOf<List<FileEntry>>(emptyList()) }
+    var fileBrowseStatus by remember { mutableStateOf("") }
+    var isBrowsingFiles by remember { mutableStateOf(false) }
+
+    // Профили ПК
+    var profiles by remember {
+        mutableStateOf(
+            run {
+                val raw = prefs.getString("saved_profiles_json", "") ?: ""
+                if (raw.isNotBlank()) {
+                    try {
+                        val arr = JSONArray(raw)
+                        List(arr.length()) { i ->
+                            val o = arr.getJSONObject(i)
+                            PcProfile(o.getString("id"), o.getString("name"), o.getString("host"), o.getString("token"), o.getString("mac"))
+                        }
+                    } catch (_: Exception) {
+                        listOf(PcProfile("1", "Основной ПК", host, token, mac))
+                    }
+                } else {
+                    listOf(PcProfile("1", "Основной ПК", host, token, mac))
+                }
+            }
+        )
+    }
+    var activeProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id ?: "1") }
+    var showAddProfileDialog by remember { mutableStateOf(false) }
+    var newProfileName by remember { mutableStateOf("") }
 
     // Трансляция экрана
     var isStreamingActive by remember { mutableStateOf(false) } // ПО УМОЛЧАНИЮ СТРОГО ВЫКЛЮЧЕНА
@@ -855,6 +992,11 @@ fun PcControlMainApp(
                 apps = snap.apps
                 activeWindow = snap.activeWindow
                 ramPercent = snap.ramPercent
+                ramTotalGb = snap.ramTotalGb
+                ramUsedGb = snap.ramUsedGb
+                cpuPercent = snap.cpuPercent
+                uptimeSec = snap.uptimeSec
+                disks = snap.disks
                 shutdownRemainingSec = snap.shutdownRemainingSec
                 shutdownActive = snap.shutdownActive || (snap.shutdownRemainingSec > 0)
                 if (!isAdjustingVolume && snap.volume >= 0) {
@@ -1103,11 +1245,6 @@ fun PcControlMainApp(
                     true,
                     observer
                 )
-                context.contentResolver.registerContentObserver(
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                    true,
-                    observer
-                )
                 syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
                 awaitCancellation()
             } finally {
@@ -1150,6 +1287,62 @@ fun PcControlMainApp(
         if (currentTab == NavTab.APPS) refresh()
     }
 
+    fun browseFiles(path: String = fileBrowsePath) {
+        if (host.isBlank() || token.isBlank()) return
+        isBrowsingFiles = true
+        fileBrowseStatus = "Загрузка папки…"
+        scope.launch {
+            try {
+                val enc = java.net.URLEncoder.encode(path, "UTF-8")
+                val r = http(host.trim(), token.trim(), "/files/browse?path=$enc", "GET", timeoutMs = 4000)
+                if (r.code == 200) {
+                    val res = parseBrowseResult(r.body)
+                    fileBrowsePath = res.path
+                    fileBrowseParent = res.parent
+                    if (res.drives.isNotEmpty()) fileBrowseDrives = res.drives
+                    fileBrowseEntries = res.entries
+                    fileBrowseStatus = "Папка: ${res.path} (${res.entries.size} элементов)"
+                } else {
+                    fileBrowseStatus = "Ошибка: ${r.code} ${r.body}"
+                }
+            } catch (e: Exception) {
+                fileBrowseStatus = "Сбой связи: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            } finally {
+                isBrowsingFiles = false
+            }
+        }
+    }
+
+    fun downloadFileFromPc(entry: FileEntry) {
+        if (host.isBlank() || token.isBlank()) return
+        status = "Скачиваю ${entry.name}…"
+        scope.launch {
+            try {
+                val fullPath = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\\${entry.name}"
+                val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
+                val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val destFile = File(downloadDir, entry.name)
+                val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
+                conn.setRequestProperty("X-Token", safeToken)
+                if (conn.responseCode == 200) {
+                    conn.inputStream.use { input ->
+                        FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    status = "Файл ${entry.name} сохранён в Загрузки ✔"
+                } else {
+                    status = "Ошибка скачивания: HTTP ${conn.responseCode}"
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                status = "Ошибка скачивания: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            }
+        }
+    }
+
     // Непрерывный высокоскоростной видеопоток экрана (MJPEG поток 60/90/120 FPS + HTTP fallback)
     LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -1172,8 +1365,10 @@ fun PcControlMainApp(
 
                 var gotFrames = false
                 try {
-                    runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors) { bmp ->
+                    runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors) { bmp, fpsVal, pingVal ->
                         screenBitmap = bmp
+                        liveStreamFps = fpsVal
+                        liveStreamPing = pingVal
                         pcOnline = true
                         gotFrames = true
                     }
@@ -1556,6 +1751,24 @@ fun PcControlMainApp(
                                 } else {
                                     Text("Ожидание первого кадра…", color = Color.White, style = MaterialTheme.typography.bodyMedium)
                                 }
+                                if (isStreamingActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(8.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.Black.copy(alpha = 0.75f))
+                                            .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "🟢 ${liveStreamFps} FPS • ${liveStreamPing} мс",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF00E5FF)
+                                        )
+                                    }
+                                }
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1838,6 +2051,87 @@ fun PcControlMainApp(
                         ) {
                             Text("Программы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
+                // Проводник файлов ПК
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Проводник файлов ПК 📁", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            if (fileBrowseParent.isNotBlank()) {
+                                OutlinedButton(onClick = { browseFiles(fileBrowseParent) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Text("⬆ Наверх", fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        // Выбор диска
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            fileBrowseDrives.forEach { drive ->
+                                FilterChip(
+                                    selected = fileBrowsePath.startsWith(drive, ignoreCase = true),
+                                    onClick = { browseFiles("$drive\\") },
+                                    label = { Text("Диск $drive") }
+                                )
+                            }
+                            OutlinedButton(onClick = { browseFiles(fileBrowsePath) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                                Text("🔄", fontSize = 13.sp)
+                            }
+                        }
+
+                        Text("Путь: $fileBrowsePath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+                        if (isBrowsingFiles) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally))
+                        } else if (fileBrowseEntries.isEmpty()) {
+                            Text("Папка пуста или нажмите 🔄 для загрузки", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().height(240.dp).verticalScroll(rememberScrollState())) {
+                                fileBrowseEntries.forEach { entry ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)).padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text(if (entry.isDir) "📁" else when {
+                                                entry.name.endsWith(".jpg", true) || entry.name.endsWith(".png", true) -> "🖼️"
+                                                entry.name.endsWith(".mp4", true) || entry.name.endsWith(".mkv", true) -> "🎬"
+                                                entry.name.endsWith(".mp3", true) || entry.name.endsWith(".flac", true) -> "🎵"
+                                                else -> "📄"
+                                            }, fontSize = 18.sp)
+                                            Column {
+                                                Text(entry.name, fontSize = 13.sp, fontWeight = if (entry.isDir) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                if (!entry.isDir) {
+                                                    val sizeMb = round(entry.size / (1024.0 * 1024.0) * 10) / 10.0
+                                                    Text(if (sizeMb >= 1.0) "$sizeMb МБ" else "${entry.size / 1024} КБ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                        if (entry.isDir) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val next = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) "$fileBrowsePath${entry.name}" else "$fileBrowsePath\\${entry.name}"
+                                                    browseFiles(next)
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Открыть ➔", fontSize = 11.sp)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { downloadFileFromPc(entry) },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("⬇ Скачать", fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+
 
                         if (apps.isEmpty()) {
                             Text("Список программ пуст.", style = MaterialTheme.typography.bodyMedium)
@@ -1873,6 +2167,54 @@ fun PcControlMainApp(
 
             // ==================== 4. ПИТАНИЕ И ЭКРАН ====================
             if (currentTab == NavTab.POWER) {
+                // Дашборд мониторинга ПК
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Мониторинг ПК 📊", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            val upHours = uptimeSec / 3600
+                            val upMins = (uptimeSec % 3600) / 60
+                            Text(
+                                if (uptimeSec > 0) "Аптайм: ${upHours}ч ${upMins}м" else "ПК в сети",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Процессор и ОЗУ
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedCard(shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("Процессор", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("$cpuPercent%", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (cpuPercent > 80) Color(0xFFFF5252) else Color(0xFF00E5FF))
+                                }
+                            }
+                            OutlinedCard(shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("ОЗУ ($ramPercent%)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(if (ramTotalGb > 0) "${ramUsedGb} / ${ramTotalGb} ГБ" else "$ramPercent%", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Диски
+                        if (disks.isNotEmpty()) {
+                            Text("Накопители:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                disks.forEach { disk ->
+                                    OutlinedCard(shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Text("Диск ${disk.drive}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text("${disk.freeGb} ГБ своб.", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                            Text("Всего: ${disk.totalGb} ГБ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Умная плашка отмены: отображается ТОЛЬКО когда активен таймер выключения!
                 if (shutdownActive || shutdownRemainingSec > 0) {
                     Card(
@@ -1983,6 +2325,36 @@ fun PcControlMainApp(
 
             // ==================== 5. ОПЦИИ И НАСТРОЙКИ ====================
             if (currentTab == NavTab.SETTINGS) {
+                // Профили ПК
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Компьютеры (Профили)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Button(onClick = { showAddProfileDialog = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                Text("+ Добавить ПК", fontSize = 12.sp)
+                            }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            profiles.forEach { prof ->
+                                FilterChip(
+                                    selected = prof.id == activeProfileId,
+                                    onClick = {
+                                        activeProfileId = prof.id
+                                        host = prof.host
+                                        token = prof.token
+                                        mac = prof.mac
+                                        save()
+                                        status = "Выбран профиль: ${prof.name}"
+                                        scope.launch { refresh() }
+                                    },
+                                    label = { Text("🖥️ ${prof.name}") }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Настройки подключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -2050,9 +2422,9 @@ fun PcControlMainApp(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Автозагрузка фото и видео 📸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Автозагрузка новых фото 📸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text(
-                                    "Новые фото и видео с камеры сразу сохраняются в папку photos на ПК через Tailscale",
+                                    "Свежие снимки с камеры автоматически сохраняются в D:\\Photos на ПК через Tailscale",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2069,7 +2441,11 @@ fun PcControlMainApp(
                                         }
                                         if (hasPerm) {
                                             autoSyncMedia = true
-                                            prefs.edit().putBoolean("auto_sync_media", true).apply()
+                                            val nowSec = System.currentTimeMillis() / 1000L
+                                            prefs.edit()
+                                                .putBoolean("auto_sync_media", true)
+                                                .putLong("sync_start_timestamp", nowSec)
+                                                .apply()
                                             scope.launch {
                                                 syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
                                             }
@@ -2115,6 +2491,59 @@ fun PcControlMainApp(
                 }
             }
         }
+    }
+
+    if (showAddProfileDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddProfileDialog = false },
+            title = { Text("Новый компьютер") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Текущие параметры подключения будут сохранены как новый профиль ПК.", fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = newProfileName,
+                        onValueChange = { newProfileName = it },
+                        label = { Text("Имя ПК (например: Ноутбук, Дача)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = newProfileName.trim().ifEmpty { "ПК ${profiles.size + 1}" }
+                        val newProf = PcProfile(
+                            id = System.currentTimeMillis().toString(),
+                            name = name,
+                            host = host.trim(),
+                            token = token.trim(),
+                            mac = mac.trim()
+                        )
+                        val updated = profiles + newProf
+                        profiles = updated
+                        activeProfileId = newProf.id
+                        val arr = JSONArray()
+                        updated.forEach { p ->
+                            arr.put(JSONObject().apply {
+                                put("id", p.id)
+                                put("name", p.name)
+                                put("host", p.host)
+                                put("token", p.token)
+                                put("mac", p.mac)
+                            })
+                        }
+                        prefs.edit().putString("saved_profiles_json", arr.toString()).apply()
+                        showAddProfileDialog = false
+                        newProfileName = ""
+                        status = "Профиль $name добавлен ✔"
+                    }
+                ) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddProfileDialog = false }) { Text("Отмена") }
+            }
+        )
     }
 
     // Диалог подтверждения выключения/сна

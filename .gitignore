@@ -1,5 +1,17 @@
+# Server private data and binaries
+config.json
+server.log*
+updates/
+photos/
+*.apk
+*.part
+__pycache__/
+*.pyc
+
+# Android build and IDE
 .gradle/
 build/
+app/build/
 local.properties
 .idea/
 *.iml
