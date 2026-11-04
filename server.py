@@ -659,8 +659,11 @@ def capture_screen_jpeg(max_width: int = 960, quality: int = 60, all_monitors: b
         gp_bitmap = ctypes.c_void_p()
         stream = ctypes.c_void_p()
         try:
-            _gdi32.SetStretchBltMode(hdc_mem, 3)
-            _gdi32.StretchBlt(hdc_mem, 0, 0, dst_w, dst_h, hdc_screen, src_x, src_y, src_w, src_h, 0x00CC0020)
+            if src_w == dst_w and src_h == dst_h:
+                _gdi32.BitBlt(hdc_mem, 0, 0, dst_w, dst_h, hdc_screen, src_x, src_y, 0x00CC0020)
+            else:
+                _gdi32.SetStretchBltMode(hdc_mem, 3)
+                _gdi32.StretchBlt(hdc_mem, 0, 0, dst_w, dst_h, hdc_screen, src_x, src_y, src_w, src_h, 0x00CC0020)
 
             # Рисуем курсор мыши
             pt = wintypes.POINT()

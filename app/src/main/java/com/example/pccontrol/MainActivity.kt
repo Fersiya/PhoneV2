@@ -10,6 +10,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -298,7 +302,7 @@ suspend fun runMjpegStream(
         var bufferB: Bitmap? = null
         var useBufferA = true
         val opts = BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inPreferredConfig = Bitmap.Config.RGB_565
             inMutable = true
         }
         var frameCount = 0
@@ -368,7 +372,8 @@ suspend fun runMjpegStream(
                     }
                     val currentPing = nowMs - frameStartMs
 
-                    withContext(Dispatchers.Main) {
+                    // Неблокирующая отправка кадра в UI поток без задержки фонового чтения
+                    launch(Dispatchers.Main.immediate) {
                         onFrame(img, calcFps, currentPing)
                     }
                 }
@@ -991,6 +996,13 @@ fun PcControlMainApp(
     var streamAllMonitors by remember { mutableStateOf(false) }
     var directTapMode by remember { mutableStateOf(true) }
     var streamZoom by remember { mutableFloatStateOf(1f) }
+    var streamPanX by remember { mutableFloatStateOf(0f) }
+    var streamPanY by remember { mutableFloatStateOf(0f) }
+    var streamFhdMode by remember { mutableStateOf(false) }
+
+    // Отслеживание скачивания файлов для кнопки "Открыть"
+    var downloadingFiles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var downloadedFiles by remember { mutableStateOf<Map<String, Uri>>(emptyMap()) }
     var screenBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     // Окна, софт, звук
@@ -1398,13 +1410,48 @@ fun PcControlMainApp(
         }
     }
 
+    fun openDownloadedFile(fileName: String, uri: Uri) {
+        try {
+            val ext = fileName.substringAfterLast(".", "").lowercase()
+            val mime = when (ext) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "gif" -> "image/gif"
+                "mp4" -> "video/mp4"
+                "mkv" -> "video/x-matroska"
+                "mp3" -> "audio/mpeg"
+                "pdf" -> "application/pdf"
+                "txt" -> "text/plain"
+                "apk" -> "application/vnd.android.package-archive"
+                "zip" -> "application/zip"
+                else -> context.contentResolver.getType(uri) ?: "*/*"
+            }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val dlIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(dlIntent)
+            } catch (_: Exception) {
+                status = "Файл сохранён в папке Загрузки"
+            }
+        }
+    }
+
     fun downloadFileFromPc(entry: FileEntry) {
         if (host.isBlank() || token.isBlank()) return
+        downloadingFiles = downloadingFiles + entry.name
         status = "Скачиваю ${entry.name}…"
         scope.launch {
+            var savedUri: Uri? = null
             val res = withContext(Dispatchers.IO) {
                 try {
-                    val fullPath = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\\${entry.name}"
+                    val fullPath = if (fileBrowsePath.endsWith("\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\${entry.name}"
                     val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
                     val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
@@ -1431,6 +1478,7 @@ fun PcControlMainApp(
                                     values.put(MediaStore.Downloads.IS_PENDING, 0)
                                     resolver.update(uri, values, null, null)
                                     savedOk = true
+                                    savedUri = uri
                                 } catch (_: Exception) {
                                     resolver.delete(uri, null, null)
                                 }
@@ -1443,6 +1491,7 @@ fun PcControlMainApp(
                                 FileOutputStream(destFile).use { output -> input.copyTo(output) }
                             }
                             savedOk = true
+                            savedUri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
                         }
                         conn.disconnect()
                         if (savedOk) "Файл ${entry.name} сохранён в Загрузки ✔" else "Не удалось сохранить файл"
@@ -1454,17 +1503,21 @@ fun PcControlMainApp(
                     "Ошибка скачивания: ${e.localizedMessage ?: e.javaClass.simpleName}"
                 }
             }
+            downloadingFiles = downloadingFiles - entry.name
+            if (savedUri != null) {
+                downloadedFiles = downloadedFiles + (entry.name to savedUri!!)
+            }
             status = res
         }
     }
 
     // Непрерывный высокоскоростной видеопоток экрана (MJPEG поток 60/90/120 FPS + HTTP fallback)
-    LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
+    LaunchedEffect(isStreamingActive, streamFps, streamFhdMode, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                // Всегда Full HD 1080p для максимальной четкости текста и мелких деталей при зуме
-                val w = 1920
-                val q = 80
+                // Адаптивное разрешение: FHD 1080p для детального текста, HD 720p для ультраплавных 60/90/120 FPS
+                val w = if (streamFhdMode) 1920 else if (streamFps >= 90) 1280 else 1440
+                val q = if (streamFhdMode) 68 else 70
                 val targetFps = streamFps
 
                 var gotFrames = false
@@ -1774,7 +1827,18 @@ fun PcControlMainApp(
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CoolButton("Full HD 1080p 🌟", filled = true, accentColor = Color(0xFF0284C7)) {}
+                                FilterChip(
+                                    selected = !streamFhdMode,
+                                    onClick = { streamFhdMode = false },
+                                    shape = RoundedCornerShape(10.dp),
+                                    label = { Text(if (!streamFhdMode) "⚡ HD (60-90 FPS)" else "HD") }
+                                )
+                                FilterChip(
+                                    selected = streamFhdMode,
+                                    onClick = { streamFhdMode = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    label = { Text(if (streamFhdMode) "🌟 FHD 1080p" else "FHD") }
+                                )
                                 CoolButton(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS") {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
@@ -2276,11 +2340,34 @@ fun PcControlMainApp(
                                                 Text("Открыть ➔", fontSize = 11.sp)
                                             }
                                         } else {
-                                            Button(
-                                                onClick = { downloadFileFromPc(entry) },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("⬇ Скачать", fontSize = 11.sp)
+                                            val isDownloading = entry.name in downloadingFiles
+                                            val downloadedUri = downloadedFiles[entry.name]
+                                            if (isDownloading) {
+                                                Button(
+                                                    onClick = {},
+                                                    enabled = false,
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text("⏳ Скачивание…", fontSize = 11.sp)
+                                                }
+                                            } else if (downloadedUri != null) {
+                                                Button(
+                                                    onClick = { openDownloadedFile(entry.name, downloadedUri) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text("📂 Открыть", fontSize = 11.sp, color = Color.White)
+                                                }
+                                            } else {
+                                                Button(
+                                                    onClick = { downloadFileFromPc(entry) },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text("⬇ Скачать", fontSize = 11.sp)
+                                                }
                                             }
                                         }
                                     }
@@ -2700,7 +2787,26 @@ fun PcControlMainApp(
         )
     }
 
-    // Полноэкранный режим трансляции экрана с Pinch-to-zoom жестами
+    // Полноэкранный режим трансляции экрана с Pinch-to-zoom, панорамированием и скрытием панелей
+    val window = (context as? ComponentActivity)?.window
+    DisposableEffect(isFullscreenStream) {
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            if (isFullscreenStream) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
     if (isFullscreenStream) {
         Box(
             modifier = Modifier
@@ -2716,42 +2822,83 @@ fun PcControlMainApp(
                     filterQuality = FilterQuality.Medium,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
-                        .pointerInput(host, token, mouseSensitivity, streamZoom) {
-                            detectTransformGestures(panZoomLock = false) { _, pan, zoom, _ ->
-                                if (zoom != 1f) {
-                                    streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
-                                }
-                                if (pan.x != 0f || pan.y != 0f) {
-                                    accDx += pan.x * mouseSensitivity
-                                    accDy += pan.y * mouseSensitivity
+                        .graphicsLayer {
+                            scaleX = streamZoom
+                            scaleY = streamZoom
+                            translationX = streamPanX
+                            translationY = streamPanY
+                        }
+                        .pointerInput(host, token, mouseSensitivity, streamZoom, streamPanX, streamPanY) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val downTime = System.currentTimeMillis()
+                                val startPos = down.position
+                                var isMultiTouch = false
+                                var hasMoved = false
+
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val active = event.changes.filter { it.pressed }
+                                    if (active.isEmpty()) {
+                                        val duration = System.currentTimeMillis() - downTime
+                                        if (!isMultiTouch && !hasMoved && duration < 300) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (size.width > 0 && size.height > 0) {
+                                                val localX = (startPos.x - size.width / 2f - streamPanX) / streamZoom + size.width / 2f
+                                                val localY = (startPos.y - size.height / 2f - streamPanY) / streamZoom + size.height / 2f
+                                                val nx = (localX / size.width.toFloat()).coerceIn(0f, 1f)
+                                                val ny = (localY / size.height.toFloat()).coerceIn(0f, 1f)
+                                                sendMouseAction("abs_click", nx = nx, ny = ny)
+                                            } else {
+                                                sendMouseAction("left")
+                                            }
+                                        }
+                                        break
+                                    }
+
+                                    if (active.size >= 2) {
+                                        // ДВА ПАЛЬЦА: масштабирование (зум) и свободное перемещение по увеличенному экрану
+                                        isMultiTouch = true
+                                        hasMoved = true
+                                        val p0 = active[0]
+                                        val p1 = active[1]
+                                        val prevCenter = (p0.previousPosition + p1.previousPosition) / 2f
+                                        val currCenter = (p0.position + p1.position) / 2f
+                                        val panDelta = currCenter - prevCenter
+
+                                        val prevDist = kotlin.math.hypot(p0.previousPosition.x - p1.previousPosition.x, p0.previousPosition.y - p1.previousPosition.y)
+                                        val currDist = kotlin.math.hypot(p0.position.x - p1.position.x, p0.position.y - p1.position.y)
+                                        if (prevDist > 1f && currDist > 1f) {
+                                            val scale = currDist / prevDist
+                                            streamZoom = (streamZoom * scale).coerceIn(1f, 5f)
+                                        }
+
+                                        val maxPanX = (size.width * (streamZoom - 1f)) / 2f
+                                        val maxPanY = (size.height * (streamZoom - 1f)) / 2f
+                                        if (maxPanX > 0f) {
+                                            streamPanX = (streamPanX + panDelta.x).coerceIn(-maxPanX, maxPanX)
+                                        } else {
+                                            streamPanX = 0f
+                                        }
+                                        if (maxPanY > 0f) {
+                                            streamPanY = (streamPanY + panDelta.y).coerceIn(-maxPanY, maxPanY)
+                                        } else {
+                                            streamPanY = 0f
+                                        }
+                                        active.forEach { it.consume() }
+                                    } else if (active.size == 1 && !isMultiTouch) {
+                                        // ОДИН ПАЛЕЦ: плавное ведение курсора мыши на ПК через UDP
+                                        val p = active[0]
+                                        val diff = p.position - p.previousPosition
+                                        if (kotlin.math.hypot(diff.x, diff.y) > 1.2f) {
+                                            hasMoved = true
+                                            accDx += diff.x * mouseSensitivity
+                                            accDy += diff.y * mouseSensitivity
+                                            p.consume()
+                                        }
+                                    }
                                 }
                             }
-                        }
-                        .pointerInput(host, token, streamZoom) {
-                            detectTapGestures(
-                                onTap = { offset ->
-                                    if (size.width > 0 && size.height > 0) {
-                                        val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                        val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                        sendMouseAction("abs_click", nx = nx, ny = ny)
-                                    }
-                                },
-                                onDoubleTap = { offset ->
-                                    if (size.width > 0 && size.height > 0) {
-                                        val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                        val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                        sendMouseAction("abs_double", nx = nx, ny = ny)
-                                    }
-                                },
-                                onLongPress = { offset ->
-                                    if (size.width > 0 && size.height > 0) {
-                                        val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                        val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                        sendMouseAction("abs_right", nx = nx, ny = ny)
-                                    }
-                                }
-                            )
                         }
                 )
             } else {
@@ -2767,6 +2914,10 @@ fun PcControlMainApp(
                         .background(Color.Black.copy(alpha = 0.75f))
                         .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clickable {
+                            showStreamFpsOverlay = false
+                            prefs.edit().putBoolean("show_stream_fps_overlay", false).apply()
+                        }
                 ) {
                     Text(
                         text = "🟢 ${liveStreamFps} FPS • ${liveStreamPing} мс",
@@ -2801,9 +2952,19 @@ fun PcControlMainApp(
                             ) {
                                 OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ЛКМ", fontSize = 12.sp) }
                                 OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ПКМ", fontSize = 12.sp) }
-                                OutlinedButton(onClick = { streamZoom = (streamZoom - 0.5f).coerceAtLeast(1f) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍-", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { sendMouseAction("double") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("2×", fontSize = 12.sp) }
+                                HoldScrollButton("⬆") { sendMouseAction("scroll", dy = 3) }
+                                HoldScrollButton("⬇") { sendMouseAction("scroll", dy = -3) }
+                                OutlinedButton(onClick = {
+                                    streamZoom = (streamZoom - 0.5f).coerceAtLeast(1f)
+                                    if (streamZoom == 1f) { streamPanX = 0f; streamPanY = 0f }
+                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍-", fontSize = 12.sp) }
                                 OutlinedButton(onClick = { streamZoom = (streamZoom + 0.5f).coerceAtMost(5f) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍+", fontSize = 12.sp) }
-                                OutlinedButton(onClick = { streamZoom = 1f }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("1×", fontSize = 12.sp) }
+                                OutlinedButton(onClick = {
+                                    streamZoom = 1f
+                                    streamPanX = 0f
+                                    streamPanY = 0f
+                                }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("1×", fontSize = 12.sp) }
                                 OutlinedButton(onClick = {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
