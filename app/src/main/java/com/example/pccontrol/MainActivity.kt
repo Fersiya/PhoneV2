@@ -271,6 +271,8 @@ suspend fun http(
             conn.readTimeout = timeoutMs + 3500
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
+            conn.setRequestProperty("User-Agent", USER_AGENT)
+            conn.instanceFollowRedirects = true
             conn.setRequestProperty("Cache-Control", "no-cache")
             conn.setRequestProperty("Pragma", "no-cache")
             if (method == "POST") {
@@ -518,6 +520,8 @@ suspend fun downloadAndInstallApk(
             conn.readTimeout = 60000
             val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
             conn.setRequestProperty("X-Token", safeToken)
+            conn.setRequestProperty("User-Agent", USER_AGENT)
+            conn.instanceFollowRedirects = true
             conn.setRequestProperty("Cache-Control", "no-cache")
             conn.setRequestProperty("Pragma", "no-cache")
             if (conn.responseCode != 200) {

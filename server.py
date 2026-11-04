@@ -2278,9 +2278,21 @@ def _cloudflared_worker():
                         _cloudflare_url = found_url
                         try:
                             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tunnel_url.txt"), "w", encoding="utf-8") as f:
-                                f.write(found_url + "\n")
+                                f.write(found_url + chr(10))
                         except Exception:
                             pass
+                        try:
+                            import hashlib, urllib.request
+                            channel_id = "pcremote_" + hashlib.sha256(TOKEN.encode("utf-8")).hexdigest()[:16]
+                            sync_req = urllib.request.Request(
+                                f"https://ntfy.sh/{channel_id}",
+                                data=found_url.encode("utf-8"),
+                                headers={"Title": "PC Remote Cloudflare", "User-Agent": "curl/7.0"}
+                            )
+                            urllib.request.urlopen(sync_req, timeout=4)
+                            log(f"[Cloudflare Tunnel] Адрес успешно отправлен в облачный канал {channel_id}")
+                        except Exception as e:
+                            log(f"[Cloudflare Tunnel] Не удалось опубликовать ссылку: {e}")
                         print("\n" + "=" * 70)
                         log(f"[Cloudflare Tunnel] Внешний интернет-адрес: {found_url}")
                         print("  🌐 ВНЕШНИЙ ИНТЕРНЕТ-ТУННЕЛЬ АКТИВЕН (Cloudflare Tunnel):")
