@@ -87,6 +87,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -292,12 +293,12 @@ suspend fun runMjpegStream(
         val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
         conn.setRequestProperty("X-Token", safeToken)
         if (conn.responseCode != 200) return@withContext
-        val stream = conn.inputStream.buffered(16384)
+        val stream = conn.inputStream.buffered(65536)
         var bufferA: Bitmap? = null
         var bufferB: Bitmap? = null
         var useBufferA = true
         val opts = BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.RGB_565
+            inPreferredConfig = Bitmap.Config.ARGB_8888
             inMutable = true
         }
         var frameCount = 0
@@ -1461,21 +1462,10 @@ fun PcControlMainApp(
     LaunchedEffect(isStreamingActive, streamFps, streamHd, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val w = when {
-                    streamHd -> 1280
-                    streamFps >= 120 -> 540
-                    streamFps >= 90 -> 640
-                    streamFps >= 60 -> 720
-                    else -> 854
-                }
-                val q = when {
-                    streamHd -> 68
-                    streamFps >= 120 -> 36
-                    streamFps >= 90 -> 42
-                    streamFps >= 60 -> 48
-                    else -> 55
-                }
-                val targetFps = if (streamHd) minOf(60, streamFps) else streamFps
+                // Всегда Full HD 1080p для максимальной четкости текста и мелких деталей при зуме
+                val w = 1920
+                val q = 80
+                val targetFps = streamFps
 
                 var gotFrames = false
                 try {
@@ -1784,7 +1774,11 @@ fun PcControlMainApp(
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CoolButton(if (streamHd) "HD ✔" else "SD", filled = streamHd) { streamHd = !streamHd }
+                                CoolButton("Full HD 1080p 🌟", filled = true, accentColor = Color(0xFF0284C7)) {}
+                                CoolButton(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS") {
+                                    showStreamFpsOverlay = !showStreamFpsOverlay
+                                    prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
+                                }
                                 CoolButton("🔍 ${streamZoom.toInt()}×") {
                                     streamZoom = when (streamZoom) {
                                         1f -> 2f
@@ -1817,6 +1811,7 @@ fun PcControlMainApp(
                                         bitmap = currentBmp,
                                         contentDescription = "Экран ПК",
                                         contentScale = ContentScale.FillBounds,
+                                        filterQuality = FilterQuality.Medium,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
@@ -1865,7 +1860,7 @@ fun PcControlMainApp(
                                 } else {
                                     Text("Ожидание первого кадра…", color = Color.White, style = MaterialTheme.typography.bodyMedium)
                                 }
-                                if (isStreamingActive) {
+                                if (isStreamingActive && showStreamFpsOverlay) {
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
@@ -1874,6 +1869,10 @@ fun PcControlMainApp(
                                             .background(Color.Black.copy(alpha = 0.75f))
                                             .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .clickable {
+                                                showStreamFpsOverlay = false
+                                                prefs.edit().putBoolean("show_stream_fps_overlay", false).apply()
+                                            }
                                     ) {
                                         Text(
                                             text = "🟢 ${liveStreamFps} FPS • ${liveStreamPing} мс",
@@ -2117,58 +2116,100 @@ fun PcControlMainApp(
 
             // ==================== 3. ОКНА И СОФТ ====================
             if (currentTab == NavTab.APPS) {
+                // 1. ПРОГРАММЫ (на 1 месте, скрываемые под стрелочку)
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().clickable { isProgramsExpanded = !isProgramsExpanded },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Открытые окна на ПК", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            OutlinedButton(onClick = { scope.launch { refresh() } }, contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)) {
-                                Text("Обновить 🔄")
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Программы (${apps.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             }
+                            Text(if (isProgramsExpanded) "▲" else "▼", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                         }
 
-                        if (openWindows.isEmpty()) {
-                            Text("Окна не найдены или список обновляется…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        openWindows.forEach { win ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (win.active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent)
-                                    .padding(4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(win.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(
-                                        if (win.active) "${win.process} • активно" else win.process,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (win.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                        AnimatedVisibility(visible = isProgramsExpanded) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (apps.isEmpty()) {
+                                    Text("Список программ пуст. Добавьте из списка открытых окон ниже.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Экран") }
-                                OutlinedButton(onClick = { quickAddAppFromWindow(win) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("+ В софт") }
-                                OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
+                                apps.forEach { app ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(app.title, style = MaterialTheme.typography.bodyLarge)
+                                            if (app.running) {
+                                                Text("работает", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        }
+                                        Button(onClick = { run("/apps/${app.id}/launch") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Пуск") }
+                                        if (app.canClose) {
+                                            OutlinedButton(onClick = { run("/apps/${app.id}/close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
+                                        }
+                                        OutlinedButton(onClick = { deleteApp(app.id) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("🗑") }
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
+                // 2. ОТКРЫТЫЕ ОКНА WINDOWS (под стрелочку, свернуты по умолчанию)
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().clickable { isWindowsExpanded = !isWindowsExpanded },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Программы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Открытые окна (${openWindows.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { scope.launch { refresh() } }, contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)) {
+                                    Text("🔄", fontSize = 12.sp)
+                                }
+                                Text(if (isWindowsExpanded) "▲" else "▼", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                            }
                         }
-                // Проводник файлов ПК
+
+                        AnimatedVisibility(visible = isWindowsExpanded) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (openWindows.isEmpty()) {
+                                    Text("Окна не найдены или список обновляется…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                openWindows.forEach { win ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (win.active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent)
+                                            .padding(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(win.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(
+                                                if (win.active) "${win.process} • активно" else win.process,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (win.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Экран") }
+                                        OutlinedButton(onClick = { quickAddAppFromWindow(win) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("+ В софт") }
+                                        OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. ПРОVОДНИК ФАЙЛОВ ПК
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -2243,39 +2284,6 @@ fun PcControlMainApp(
                                             }
                                         }
                                     }
-                                }
-                            }
-                        }
-                    }
-                }
-
-
-
-                        if (apps.isEmpty()) {
-                            Text("Список программ пуст.", style = MaterialTheme.typography.bodyMedium)
-                        }
-                        apps.forEach { app ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(app.title, style = MaterialTheme.typography.bodyLarge)
-                                    if (app.running) {
-                                        Text("работает", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                    }
-                                }
-                                Button(onClick = { run("/apps/${app.id}/launch") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) {
-                                    Text("Пуск")
-                                }
-                                if (app.canClose) {
-                                    OutlinedButton(onClick = { run("/apps/${app.id}/close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) {
-                                        Text("Закрыть")
-                                    }
-                                }
-                                OutlinedButton(onClick = { deleteApp(app.id) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) {
-                                    Text("🗑")
                                 }
                             }
                         }
@@ -2607,6 +2615,34 @@ fun PcControlMainApp(
                         }
                     }
                 }
+
+                // Карточка настроек экрана и трансляции
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Отображение FPS на трансляции", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Показывать плашку с FPS и задержкой поверх экрана ПК",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            Switch(
+                                checked = showStreamFpsOverlay,
+                                onCheckedChange = {
+                                    showStreamFpsOverlay = it
+                                    prefs.edit().putBoolean("show_stream_fps_overlay", it).apply()
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -2677,12 +2713,19 @@ fun PcControlMainApp(
                     bitmap = currentBmp,
                     contentDescription = "Полный экран",
                     contentScale = ContentScale.Fit,
+                    filterQuality = FilterQuality.Medium,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, _, zoom, _ ->
-                                streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
+                        .pointerInput(host, token, mouseSensitivity, streamZoom) {
+                            detectTransformGestures(panZoomLock = false) { _, pan, zoom, _ ->
+                                if (zoom != 1f) {
+                                    streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
+                                }
+                                if (pan.x != 0f || pan.y != 0f) {
+                                    accDx += pan.x * mouseSensitivity
+                                    accDy += pan.y * mouseSensitivity
+                                }
                             }
                         }
                         .pointerInput(host, token, streamZoom) {
@@ -2758,7 +2801,15 @@ fun PcControlMainApp(
                             ) {
                                 OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ЛКМ", fontSize = 12.sp) }
                                 OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ПКМ", fontSize = 12.sp) }
-                                OutlinedButton(onClick = { streamZoom = 1f }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("1× Сброс", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { streamZoom = (streamZoom - 0.5f).coerceAtLeast(1f) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍-", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { streamZoom = (streamZoom + 0.5f).coerceAtMost(5f) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("🔍+", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { streamZoom = 1f }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) { Text("1×", fontSize = 12.sp) }
+                                OutlinedButton(onClick = {
+                                    showStreamFpsOverlay = !showStreamFpsOverlay
+                                    prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
+                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS", fontSize = 11.sp)
+                                }
                                 OutlinedButton(onClick = { isFullscreenStream = false }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))) { Text("✕ Выйти", fontSize = 12.sp) }
                             }
                         }

@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ========================================================
@@ -15,20 +15,40 @@ if errorlevel 1 (
 )
 
 echo [1/3] Adding changes...
-git add .
+git add -A
 
 echo [2/3] Committing...
-git commit -m "Auto-update (%date% %time%)" >nul 2>&1
+git commit -m "Auto-update v3.5 (1080p, gesture mouse, FPS toggle, APPS order)" >nul 2>&1
 
-echo [3/3] Pushing to GitHub...
-git push origin main || git push --force-with-lease origin main
-if errorlevel 1 (
-    echo [!] Push failed. Check your git credentials or internet connection.
-    pause
-    exit /b 1
+echo [3/3] Synchronizing with GitHub...
+set ATTEMPT=1
+:push_retry
+echo Sending changes to GitHub (attempt !ATTEMPT! of 5)...
+git pull --rebase origin main >nul 2>&1
+git push origin main
+if %errorlevel% equ 0 goto push_success
+
+git push --force-with-lease origin main
+if %errorlevel% equ 0 goto push_success
+
+set /a ATTEMPT+=1
+if !ATTEMPT! leq 5 (
+    echo [!] Temporary GitHub error (Internal Server Error or network glitch).
+    echo     Retrying in 4 seconds...
+    timeout /t 4 >nul
+    goto push_retry
 )
 
 echo.
-echo Success! Changes pushed to GitHub.
-echo GitHub Actions has started building the new APK automatically!
+echo [!] Could not push to GitHub after 5 attempts.
+echo     Please check your internet connection and GitHub repository permissions.
+pause
+exit /b 1
+
+:push_success
+echo.
+echo ========================================================
+echo   [OK] Success! Changes pushed to GitHub!
+echo   GitHub Actions is now compiling the new APK.
+echo ========================================================
 pause
