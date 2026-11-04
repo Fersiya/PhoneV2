@@ -1784,6 +1784,7 @@ class Handler(BaseHTTPRequestHandler):
                 "shutdownRemainingSec": rem_sec,
                 "shutdownActive": bool(rem_sec > 0),
                 "volume": get_real_windows_volume(),
+                "tunnelUrl": _cloudflare_url,
             }
             return self._reply(
                 200,
@@ -2124,6 +2125,75 @@ def get_local_ips() -> list:
 
 
 
+_cloudflare_url = ""
+_cloudflare_proc = None
+
+def find_cloudflared_path() -> Optional[str]:
+    """Ищет исполняемый файл cloudflared в системе (PATH или стандартные папки установки MSI)."""
+    cand = shutil.which("cloudflared") or shutil.which("cloudflared.exe")
+    if cand and os.path.exists(cand):
+        return cand
+    common_paths = [
+        os.path.expandvars(r"%ProgramFiles%\cloudflared\cloudflared.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\cloudflared\cloudflared.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\cloudflared\cloudflared.exe"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe"),
+    ]
+    for p in common_paths:
+        if os.path.isfile(p):
+            return p
+    return None
+
+def _cloudflared_worker():
+    global _cloudflare_url, _cloudflare_proc
+    cf_path = find_cloudflared_path()
+    if not cf_path:
+        log("[Cloudflare Tunnel] cloudflared не обнаружен. Установите MSI с сайта Cloudflare для доступа без Tailscale.")
+        return
+
+    log(f"[Cloudflare Tunnel] Найден cloudflared: {cf_path}")
+    log(f"[Cloudflare Tunnel] Запуск автоматического интернет-туннеля для порта {PORT}…")
+
+    url_regex = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+    while True:
+        try:
+            cmd = [cf_path, "tunnel", "--url", f"http://127.0.0.1:{PORT}"]
+            creationflags = 0x08000000 if IS_WINDOWS else 0
+            _cloudflare_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                bufsize=1,
+                creationflags=creationflags
+            )
+
+            for line in _cloudflare_proc.stdout:
+                match = url_regex.search(line)
+                if match:
+                    found_url = match.group(0)
+                    if found_url != _cloudflare_url:
+                        _cloudflare_url = found_url
+                        try:
+                            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tunnel_url.txt"), "w", encoding="utf-8") as f:
+                                f.write(found_url + "\n")
+                        except Exception:
+                            pass
+                        print("\n" + "=" * 70)
+                        print("  🌐 ВНЕШНИЙ ИНТЕРНЕТ-ТУННЕЛЬ АКТИВЕН (Cloudflare Tunnel):")
+                        print("  Адрес для телефона (4G/5G / Вне дома):")
+                        print(f"  -> {found_url}")
+                        print("  Вставьте этот адрес в приложении на смартфоне в поле 'Адрес ПК'.")
+                        print("  Tailscale и сторонние VPN на телефоне больше НЕ НУЖНЫ!")
+                        print("=" * 70 + "\n")
+
+            _cloudflare_proc.wait()
+        except Exception as e:
+            log(f"[Cloudflare Tunnel] Ошибка процесса: {e}")
+        time.sleep(3)
+
 def _udp_mouse_worker():
     """Быстрый UDP-сервер для мгновенного перемещения мыши (125+ Гц) с нулевой задержкой без накладных расходов HTTP/TCP."""
     try:
@@ -2145,7 +2215,7 @@ def _udp_mouse_worker():
             # Автопоиск ПК в локальной Wi-Fi сети без Tailscale
             if text == "PC_DISCOVERY_PING":
                 pc_name = socket.gethostname() or "ПК"
-                reply = f"PC_DISCOVERY_PONG:{pc_name}"
+                reply = f"PC_DISCOVERY_PONG:{pc_name}:{_cloudflare_url}"
                 sock.sendto(reply.encode("utf-8"), addr)
                 continue
 
@@ -2216,6 +2286,7 @@ if __name__ == "__main__":
     log(f"Сервер слушает порт {PORT}. Остановить: Ctrl+C")
     threading.Thread(target=_watch_server_file_and_restart, daemon=True).start()
     threading.Thread(target=_udp_mouse_worker, daemon=True).start()
+    threading.Thread(target=_cloudflared_worker, daemon=True).start()
     try:
         server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     except OSError as e:

@@ -245,6 +245,16 @@ fun getInstalledVersionName(context: Context): String =
         "0.0"
     }
 
+fun buildPcUrl(host: String, pathWithQuery: String): String {
+    val cleanHost = host.trim().removeSuffix("/")
+    val path = if (pathWithQuery.startsWith("/")) pathWithQuery else "/$pathWithQuery"
+    return when {
+        cleanHost.startsWith("http://") || cleanHost.startsWith("https://") -> "$cleanHost$path"
+        cleanHost.contains("trycloudflare.com") || (cleanHost.contains(".") && !cleanHost.all { it.isDigit() || it == '.' || it == ':' }) -> "https://$cleanHost$path"
+        else -> if (":" in cleanHost) "http://$cleanHost$path" else "http://$cleanHost:$PORT$path"
+    }
+}
+
 suspend fun http(
     host: String,
     token: String,
@@ -254,7 +264,7 @@ suspend fun http(
     timeoutMs: Int = 3500
 ): HttpResult =
     withContext(Dispatchers.IO) {
-        val conn = URL("http://$host:$PORT$path").openConnection() as HttpURLConnection
+        val conn = URL(buildPcUrl(host, path)).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
             conn.connectTimeout = timeoutMs
@@ -289,7 +299,7 @@ suspend fun runMjpegStream(
     onFrame: (ImageBitmap, Int, Long) -> Unit
 ) = withContext(Dispatchers.IO) {
     val monParam = if (allMonitors) "all" else "0"
-    val conn = URL("http://$host:$PORT/stream?fps=$fps&w=$width&q=$quality&m=$monParam").openConnection() as HttpURLConnection
+    val conn = URL(buildPcUrl(host, "/stream?fps=$fps&w=$width&q=$quality&m=$monParam")).openConnection() as HttpURLConnection
     try {
         conn.requestMethod = "GET"
         conn.connectTimeout = 3000
@@ -394,7 +404,7 @@ suspend fun fetchScreenBitmap(
 ): ImageBitmap? =
     withContext(Dispatchers.IO) {
         val monParam = if (allMonitors) "all" else "0"
-        val conn = URL("http://$host:$PORT/screen?w=$width&q=$quality&m=$monParam").openConnection() as HttpURLConnection
+        val conn = URL(buildPcUrl(host, "/screen?w=$width&q=$quality&m=$monParam")).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "GET"
             conn.connectTimeout = 1200
@@ -502,7 +512,7 @@ suspend fun downloadAndInstallApk(
                 }
             }
 
-            val conn = URL("http://$host:$PORT/update/download").openConnection() as HttpURLConnection
+            val conn = URL(buildPcUrl(host, "/update/download")).openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 5000
             conn.readTimeout = 60000
@@ -774,7 +784,7 @@ suspend fun uploadMediaFile(
 ): Boolean = withContext(Dispatchers.IO) {
     try {
         val encodedName = java.net.URLEncoder.encode(displayName, "UTF-8")
-        val conn = URL("http://$host:$PORT/upload/media").openConnection() as HttpURLConnection
+        val conn = URL(buildPcUrl(host, "/upload/media")).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 6000
         conn.readTimeout = 120000
@@ -1149,28 +1159,44 @@ fun PcControlMainApp(
         if (host.isBlank() || token.isBlank()) return
         val nxStr = String.format(Locale.US, "%.4f", nx)
         val nyStr = String.format(Locale.US, "%.4f", ny)
-        val cmd = if (click) "tap" else "abs"
-        val packetData = "$token:$cmd:$nxStr,$nyStr".toByteArray(Charsets.UTF_8)
-        scope.launch(Dispatchers.IO) {
-            try {
-                if (cachedUdpHost != host.trim() || cachedUdpIp == null) {
-                    cachedUdpIp = InetAddress.getByName(host.trim())
-                    cachedUdpHost = host.trim()
-                }
-                val addr = cachedUdpIp ?: return@launch
-                val sock = udpMouseSocket ?: return@launch
-                val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
-                sock.send(packet)
-            } catch (_: Exception) {
-                val payload = JSONObject().apply {
-                    put("action", if (click) "abs_click" else "abs_move")
-                    put("nx", nxStr.toDouble())
-                    put("ny", nyStr.toDouble())
-                    if (streamAllMonitors) put("allMonitors", true)
-                }.toString()
+        val isTunnel = host.contains("trycloudflare.com") || host.startsWith("https://")
+
+        if (isTunnel) {
+            val payload = JSONObject().apply {
+                put("action", if (click) "abs_click" else "abs_move")
+                put("nx", nxStr.toDouble())
+                put("ny", nyStr.toDouble())
+                if (streamAllMonitors) put("allMonitors", true)
+            }.toString()
+            scope.launch(Dispatchers.IO) {
                 try {
-                    http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 800)
+                    http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 400)
                 } catch (_: Exception) {}
+            }
+        } else {
+            val cmd = if (click) "tap" else "abs"
+            val packetData = "$token:$cmd:$nxStr,$nyStr".toByteArray(Charsets.UTF_8)
+            scope.launch(Dispatchers.IO) {
+                try {
+                    if (cachedUdpHost != host.trim() || cachedUdpIp == null) {
+                        cachedUdpIp = InetAddress.getByName(host.trim())
+                        cachedUdpHost = host.trim()
+                    }
+                    val addr = cachedUdpIp ?: return@launch
+                    val sock = udpMouseSocket ?: return@launch
+                    val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
+                    sock.send(packet)
+                } catch (_: Exception) {
+                    val payload = JSONObject().apply {
+                        put("action", if (click) "abs_click" else "abs_move")
+                        put("nx", nxStr.toDouble())
+                        put("ny", nyStr.toDouble())
+                        if (streamAllMonitors) put("allMonitors", true)
+                    }.toString()
+                    try {
+                        http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 600)
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -1193,13 +1219,16 @@ fun PcControlMainApp(
                 socket.receive(replyPacket)
                 val replyText = String(replyPacket.data, 0, replyPacket.length, Charsets.UTF_8).trim()
                 if (replyText.startsWith("PC_DISCOVERY_PONG:")) {
-                    val parts = replyText.split(":", limit = 3)
+                    val parts = replyText.split(":")
                     val pcName = if (parts.size >= 2) parts[1] else "ПК"
+                    val tunnelUrl = if (parts.size >= 3) parts.subList(2, parts.size).joinToString(":") else ""
                     val foundHost = replyPacket.address.hostAddress ?: ""
                     withContext(Dispatchers.Main) {
                         host = foundHost
                         save()
-                        status = "Найден ПК: $pcName ($foundHost) ✔"
+                        val tunnelNote = if (tunnelUrl.isNotBlank()) "
+Интернет-туннель: $tunnelUrl" else ""
+                        status = "Найден ПК: $pcName ($foundHost) ✔$tunnelNote"
                         scope.launch { refresh() }
                     }
                     found = true
@@ -1549,7 +1578,7 @@ fun PcControlMainApp(
                 try {
                                                             val fullPath = if (fileBrowsePath.endsWith('/') || fileBrowsePath.endsWith(File.separatorChar)) fileBrowsePath + entry.name else fileBrowsePath + File.separator + entry.name
                     val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
-                    val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
+                    val conn = URL(buildPcUrl(host, "/files/download?path=$enc")).openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.connectTimeout = 5000
                     conn.readTimeout = 120000
