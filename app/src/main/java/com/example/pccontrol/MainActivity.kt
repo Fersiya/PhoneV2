@@ -203,7 +203,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.6"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.8"
     } catch (_: Exception) {
         "0.0"
     }
@@ -629,7 +629,6 @@ private fun RowScope.CoolButton(
     }
 }
 
-@Composable
 suspend fun uploadMediaFile(
     context: Context,
     host: String,
@@ -746,6 +745,7 @@ suspend fun syncPendingMedia(
     uploadedCount
 }
 
+@Composable
 fun PcControlMainApp(
     incomingSharedUrl: String? = null,
     onSharedUrlConsumed: () -> Unit = {}
@@ -777,7 +777,7 @@ fun PcControlMainApp(
                 syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
             }
         } else {
-            status = "Разрешите доступ к фото для автозагрузки"
+            mediaSyncStatus = "Разрешите доступ к фото для автозагрузки"
         }
     }
 
@@ -1837,9 +1837,6 @@ fun PcControlMainApp(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Программы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Button(onClick = { showAddAppDialog = true }, contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)) {
-                                Text("+ Добавить")
-                            }
                         }
 
                         if (apps.isEmpty()) {
@@ -2135,46 +2132,5 @@ fun PcControlMainApp(
         )
     }
 
-    // Диалог добавления программы
-    if (showAddAppDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddAppDialog = false },
-            title = { Text("Добавить программу") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = newAppTitle,
-                        onValueChange = { newAppTitle = it },
-                        label = { Text("Название (например: Telegram)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newAppPath,
-                        onValueChange = { newAppPath = it },
-                        label = { Text("Путь к exe (например: %APPDATA%\\Telegram...\\Telegram.exe)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newAppProcess,
-                        onValueChange = { newAppProcess = it },
-                        label = { Text("Имя процесса для закрытия (например: Telegram.exe)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = newAppForce, onCheckedChange = { newAppForce = it })
-                        Text("Принудительное закрытие (/F)", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { submitNewApp() }) { Text("Сохранить") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddAppDialog = false }) { Text("Отмена") }
-            }
-        )
-    }
+
 }
