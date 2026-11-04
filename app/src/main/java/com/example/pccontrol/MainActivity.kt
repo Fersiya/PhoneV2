@@ -53,6 +53,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import android.Manifest
+import android.content.ContentUris
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Switch
+import kotlinx.coroutines.awaitCancellation
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -620,6 +630,122 @@ private fun RowScope.CoolButton(
 }
 
 @Composable
+suspend fun uploadMediaFile(
+    context: Context,
+    host: String,
+    token: String,
+    uri: Uri,
+    displayName: String
+): Boolean = withContext(Dispatchers.IO) {
+    try {
+        val encodedName = java.net.URLEncoder.encode(displayName, "UTF-8")
+        val conn = URL("http://$host:$PORT/upload/media").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 6000
+        conn.readTimeout = 120000
+        val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
+        conn.setRequestProperty("X-Token", safeToken)
+        conn.setRequestProperty("X-Filename", encodedName)
+        conn.setRequestProperty("Content-Type", "application/octet-stream")
+        conn.doOutput = true
+
+        val stream = context.contentResolver.openInputStream(uri) ?: return@withContext false
+        val size = try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+        } catch (_: Exception) { -1L }
+
+        if (size > 0) {
+            conn.setFixedLengthStreamingMode(size)
+        } else {
+            conn.setChunkedStreamingMode(65536)
+        }
+
+        stream.use { input ->
+            conn.outputStream.use { output ->
+                val buf = ByteArray(65536)
+                var r: Int
+                while (input.read(buf).also { r = it } != -1) {
+                    output.write(buf, 0, r)
+                }
+                output.flush()
+            }
+        }
+        val code = conn.responseCode
+        conn.disconnect()
+        code == 200
+    } catch (_: Exception) {
+        false
+    }
+}
+
+suspend fun syncPendingMedia(
+    context: Context,
+    host: String,
+    token: String,
+    onStatus: (String) -> Unit
+): Int = withContext(Dispatchers.IO) {
+    if (host.isBlank() || token.isBlank()) return@withContext 0
+    val prefs = context.getSharedPreferences("pc_control_media", Context.MODE_PRIVATE)
+    val uploadedSet = prefs.getStringSet("uploaded_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+
+    val urisToQuery = listOf(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    )
+
+    var uploadedCount = 0
+    for (contentUri in urisToQuery) {
+        val proj = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.DATE_ADDED
+        )
+        val cursor = try {
+            context.contentResolver.query(
+                contentUri,
+                proj,
+                null,
+                null,
+                "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            )
+        } catch (_: Exception) {
+            null
+        }
+
+        cursor?.use { c ->
+            val idCol = c.getColumnIndex(MediaStore.MediaColumns._ID)
+            val nameCol = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+            var checked = 0
+            while (c.moveToNext() && checked < 50) {
+                checked++
+                val id = c.getLong(idCol)
+                val idStr = "${contentUri.lastPathSegment}_$id"
+                if (uploadedSet.contains(idStr)) continue
+
+                val name = c.getString(nameCol) ?: "media_$id.jpg"
+                val itemUri = ContentUris.withAppendedId(contentUri, id)
+
+                withContext(Dispatchers.Main) {
+                    onStatus("Отправляю $name на ПК…")
+                }
+
+                val ok = uploadMediaFile(context, host, token, itemUri, name)
+                if (ok) {
+                    uploadedSet.add(idStr)
+                    prefs.edit().putStringSet("uploaded_ids", uploadedSet).apply()
+                    uploadedCount++
+                }
+            }
+        }
+    }
+    if (uploadedCount > 0) {
+        withContext(Dispatchers.Main) {
+            onStatus("Отправлено новых файлов: $uploadedCount ✔")
+        }
+    }
+    uploadedCount
+}
+
 fun PcControlMainApp(
     incomingSharedUrl: String? = null,
     onSharedUrlConsumed: () -> Unit = {}
@@ -635,6 +761,25 @@ fun PcControlMainApp(
     var mac by remember { mutableStateOf(prefs.getString("mac", "") ?: "") }
     var installedApkHash by remember { mutableStateOf(prefs.getString("installed_apk_hash", "") ?: "") }
     var mouseSensitivity by remember { mutableFloatStateOf(prefs.getFloat("mouse_sens", 1.6f)) }
+
+    // Автосинхронизация фото и видео на ПК
+    var autoSyncMedia by remember { mutableStateOf(prefs.getBoolean("auto_sync_media", false)) }
+    var mediaSyncStatus by remember { mutableStateOf("") }
+
+    val mediaPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val granted = perms.values.any { it }
+        if (granted) {
+            autoSyncMedia = true
+            prefs.edit().putBoolean("auto_sync_media", true).apply()
+            scope.launch {
+                syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+            }
+        } else {
+            status = "Разрешите доступ к фото для автозагрузки"
+        }
+    }
 
     // Текущая вкладка навигации
     var currentTab by remember { mutableStateOf(if (host.isBlank() || token.isBlank()) NavTab.SETTINGS else NavTab.SCREEN) }
@@ -937,6 +1082,39 @@ fun PcControlMainApp(
             isDownloadingUpdate = false
             if (res.startsWith("Запуск установщика")) {
                 otaUpdateInfo = null
+            }
+        }
+    }
+
+    // Автоматическая отправка новых фото и видео на ПК
+    LaunchedEffect(autoSyncMedia, host, token) {
+        if (autoSyncMedia && host.isNotBlank() && token.isNotBlank()) {
+            val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    scope.launch {
+                        syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                    }
+                }
+            }
+            try {
+                context.contentResolver.registerContentObserver(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    true,
+                    observer
+                )
+                context.contentResolver.registerContentObserver(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    true,
+                    observer
+                )
+                syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                awaitCancellation()
+            } finally {
+                try {
+                    context.contentResolver.unregisterContentObserver(observer)
+                } catch (_: Exception) {
+                }
             }
         }
     }
@@ -1862,6 +2040,79 @@ fun PcControlMainApp(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Проверить обновления на ПК 🔄")
+                        }
+                    }
+                }
+
+                // Карточка автозагрузки фото и видео на ПК
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Автозагрузка фото и видео 📸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Новые фото и видео с камеры сразу сохраняются в папку photos на ПК через Tailscale",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            Switch(
+                                checked = autoSyncMedia,
+                                onCheckedChange = { enable ->
+                                    if (enable) {
+                                        val hasPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        } else {
+                                            androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        }
+                                        if (hasPerm) {
+                                            autoSyncMedia = true
+                                            prefs.edit().putBoolean("auto_sync_media", true).apply()
+                                            scope.launch {
+                                                syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                                            }
+                                        } else {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                mediaPermLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO))
+                                            } else {
+                                                mediaPermLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE))
+                                            }
+                                        }
+                                    } else {
+                                        autoSyncMedia = false
+                                        prefs.edit().putBoolean("auto_sync_media", false).apply()
+                                    }
+                                }
+                            )
+                        }
+
+                        if (mediaSyncStatus.isNotBlank()) {
+                            Text(
+                                mediaSyncStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if ("✔" in mediaSyncStatus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (autoSyncMedia) {
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        mediaSyncStatus = "Проверяю новые фото и видео…"
+                                        val count = syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                                        if (count == 0) mediaSyncStatus = "Все фото и видео уже на ПК ✔"
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Синхронизировать сейчас 🔄")
+                            }
                         }
                     }
                 }
