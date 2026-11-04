@@ -183,6 +183,7 @@ private val CyberDarkPalette = darkColorScheme(
 )
 
 private const val PORT = 8765
+private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
 private const val POLL_INTERVAL_MS = 2500L
 private val KeyPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp)
 
