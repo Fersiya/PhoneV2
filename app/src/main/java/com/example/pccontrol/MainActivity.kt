@@ -232,7 +232,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "3.0"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "3.1"
     } catch (_: Exception) {
         "0.0"
     }
@@ -968,8 +968,25 @@ fun PcControlMainApp(
             .putString("host", host.trim())
             .putString("token", token.trim())
             .putString("mac", mac.trim())
+            .putString("active_profile_id", activeProfileId)
             .putFloat("mouse_sens", mouseSensitivity)
             .apply()
+
+        val updated = profiles.map { p ->
+            if (p.id == activeProfileId) p.copy(host = host.trim(), token = token.trim(), mac = mac.trim()) else p
+        }
+        profiles = updated
+        val arr = JSONArray()
+        updated.forEach { p ->
+            arr.put(JSONObject().apply {
+                put("id", p.id)
+                put("name", p.name)
+                put("host", p.host)
+                put("token", p.token)
+                put("mac", p.mac)
+            })
+        }
+        prefs.edit().putString("saved_profiles_json", arr.toString()).apply()
     }
 
     fun wake() {
@@ -985,30 +1002,34 @@ fun PcControlMainApp(
             return
         }
         try {
-            val r = http(host.trim(), token.trim(), "/apps", "GET", timeoutMs = 2500)
-            pcOnline = true
+            val r = http(host.trim(), token.trim(), "/apps", "GET", timeoutMs = 4000)
             tokenError = r.code == 401
             if (r.code == 200) {
-                val snap = parseStatusSnapshot(r.body)
-                apps = snap.apps
-                activeWindow = snap.activeWindow
-                ramPercent = snap.ramPercent
-                ramTotalGb = snap.ramTotalGb
-                ramUsedGb = snap.ramUsedGb
-                cpuPercent = snap.cpuPercent
-                uptimeSec = snap.uptimeSec
-                disks = snap.disks
-                shutdownRemainingSec = snap.shutdownRemainingSec
-                shutdownActive = snap.shutdownActive || (snap.shutdownRemainingSec > 0)
-                if (!isAdjustingVolume && snap.volume >= 0) {
-                    volumeSlider = snap.volume.toFloat()
-                    hasInitializedVolume = true
+                pcOnline = true
+                try {
+                    val snap = parseStatusSnapshot(r.body)
+                    apps = snap.apps
+                    activeWindow = snap.activeWindow
+                    ramPercent = snap.ramPercent
+                    ramTotalGb = snap.ramTotalGb
+                    ramUsedGb = snap.ramUsedGb
+                    cpuPercent = snap.cpuPercent
+                    uptimeSec = snap.uptimeSec
+                    disks = snap.disks
+                    shutdownRemainingSec = snap.shutdownRemainingSec
+                    shutdownActive = snap.shutdownActive || (snap.shutdownRemainingSec > 0)
+                    if (!isAdjustingVolume && snap.volume >= 0) {
+                        volumeSlider = snap.volume.toFloat()
+                        hasInitializedVolume = true
+                    }
+                } catch (_: Exception) {
                 }
             } else {
+                pcOnline = false
                 apps = emptyList()
             }
             if (currentTab == NavTab.APPS && r.code == 200) {
-                val wr = http(host.trim(), token.trim(), "/windows", "GET", timeoutMs = 2000)
+                val wr = http(host.trim(), token.trim(), "/windows", "GET", timeoutMs = 3000)
                 if (wr.code == 200) openWindows = parseOpenWindows(wr.body)
             }
         } catch (e: Exception) {
@@ -1318,29 +1339,45 @@ fun PcControlMainApp(
         if (host.isBlank() || token.isBlank()) return
         status = "Скачиваю ${entry.name}…"
         scope.launch {
-            try {
-                val fullPath = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\\${entry.name}"
-                val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
-                val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                val destFile = File(downloadDir, entry.name)
-                val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
-                conn.setRequestProperty("X-Token", safeToken)
-                if (conn.responseCode == 200) {
-                    conn.inputStream.use { input ->
-                        FileOutputStream(destFile).use { output ->
-                            input.copyTo(output)
+            val res = withContext(Dispatchers.IO) {
+                try {
+                    val fullPath = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\\${entry.name}"
+                    val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
+                    val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    downloadDir.mkdirs()
+                    var destFile = File(downloadDir, entry.name)
+                    if (destFile.exists()) {
+                        val baseName = entry.name.substringBeforeLast(".")
+                        val ext = if (entry.name.contains(".")) ".${entry.name.substringAfterLast(".")}" else ""
+                        var idx = 1
+                        while (destFile.exists()) {
+                            destFile = File(downloadDir, "${baseName}_$idx$ext")
+                            idx++
                         }
                     }
-                    status = "Файл ${entry.name} сохранён в Загрузки ✔"
-                } else {
-                    status = "Ошибка скачивания: HTTP ${conn.responseCode}"
+                    val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.connectTimeout = 5000
+                    conn.readTimeout = 120000
+                    val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
+                    conn.setRequestProperty("X-Token", safeToken)
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.use { input ->
+                            FileOutputStream(destFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        conn.disconnect()
+                        "Файл ${destFile.name} сохранён в Загрузки ✔"
+                    } else {
+                        conn.disconnect()
+                        "Ошибка скачивания: HTTP ${conn.responseCode}"
+                    }
+                } catch (e: Exception) {
+                    "Ошибка скачивания: ${e.localizedMessage ?: e.javaClass.simpleName}"
                 }
-                conn.disconnect()
-            } catch (e: Exception) {
-                status = "Ошибка скачивания: ${e.localizedMessage ?: e.javaClass.simpleName}"
             }
+            status = res
         }
     }
 
@@ -2085,7 +2122,7 @@ fun PcControlMainApp(
                         } else if (fileBrowseEntries.isEmpty()) {
                             Text("Папка пуста или нажмите 🔄 для загрузки", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().height(240.dp).verticalScroll(rememberScrollState())) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                                 fileBrowseEntries.forEach { entry ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)).padding(horizontal = 10.dp, vertical = 6.dp),
