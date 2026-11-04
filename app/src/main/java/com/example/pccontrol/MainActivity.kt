@@ -189,6 +189,7 @@ private val KeyPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp)
 
 enum class NavTab(val title: String, val icon: String) {
     SCREEN("Экран", "🖥️"),
+    GAME("Геймпад", "🎮"),
     MEDIA("Медиа", "🎵"),
     APPS("Окна/Софт", "🪟"),
     POWER("Питание", "⚡"),
@@ -1216,7 +1217,73 @@ fun PcControlMainApp(
         }
     }
 
-            var diagnosticsReport by remember { mutableStateOf("") }
+                DisposableEffect(Unit) {
+        onDispose {
+            try { udpMouseSocket?.close() } catch (_: Exception) {}
+        }
+    }
+
+    fun sendGamepadKey(vk: Int, down: Boolean) {
+        if (host.isBlank() || token.isBlank()) return
+        val cmd = if (down) "kd" else "ku"
+        val packetData = "$token:$cmd:$vk".toByteArray(Charsets.UTF_8)
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (cachedUdpHost != host.trim() || cachedUdpIp == null) {
+                    cachedUdpIp = InetAddress.getByName(host.trim())
+                    cachedUdpHost = host.trim()
+                }
+                val addr = cachedUdpIp ?: return@launch
+                val sock = udpMouseSocket ?: return@launch
+                val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
+                sock.send(packet)
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun captureScreenshotToPhone() {
+        if (host.isBlank() || token.isBlank()) return
+        status = "Делаю скриншот экрана ПК…"
+        scope.launch(Dispatchers.IO) {
+            try {
+                val url = URL(buildPcUrl(host, "/screen?w=1920&q=92"))
+                val conn = url.openConnection() as HttpURLConnection
+                conn.setRequestProperty("User-Agent", USER_AGENT)
+                conn.setRequestProperty("X-Token", token)
+                conn.connectTimeout = 6000
+                if (conn.responseCode == 200) {
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val values = android.content.ContentValues().apply {
+                            put(MediaStore.Images.Media.DISPLAY_NAME, "PC_Screenshot_${System.currentTimeMillis()}.jpg")
+                            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                            put(MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+                        val resolver = context.contentResolver
+                        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        if (uri != null) {
+                            resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                            values.clear()
+                            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                            resolver.update(uri, values, null, null)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        status = "Скриншот экрана ПК сохранён в Галерею 📸 ✔"
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        status = "Не удалось сделать скриншот: HTTP ${conn.responseCode}"
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    status = "Ошибка снимка: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                }
+            }
+        }
+    }
+    var diagnosticsReport by remember { mutableStateOf("") }
     var isDiagnosing by remember { mutableStateOf(false) }
 
     fun runDiagnostics() {
@@ -2322,15 +2389,16 @@ fun PcControlMainApp(
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("Win+D 🖥️") { run("/media/win_d", refreshAfter = true) }
-                            CoolButton("Alt+Tab 🔄") { run("/media/alt_tab", refreshAfter = true) }
-                            CoolButton("Win+Tab 🗂️") { run("/media/win_tab", refreshAfter = true) }
                             CoolButton("Диспетчер 📊") { run("/media/task_mgr", refreshAfter = true) }
+                            CoolButton("Скриншот 📸") { captureScreenshotToPhone() }
+                            CoolButton("🔒 Блок") { run("/lock", refreshAfter = false) }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("Ctrl+Z") { run("/media/ctrl_z", refreshAfter = false) }
+                            CoolButton("Ctrl+C") { run("/media/ctrl_c", refreshAfter = false) }
+                            CoolButton("Ctrl+V") { run("/media/ctrl_v", refreshAfter = false) }
                             CoolButton("Esc") { run("/media/key_esc", refreshAfter = false) }
                             CoolButton("Alt+F4") { run("/media/alt_f4", refreshAfter = true) }
-                            CoolButton("🔒 Блок") { run("/lock", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

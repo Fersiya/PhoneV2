@@ -2383,6 +2383,18 @@ def _udp_mouse_worker():
                         _send_inputs([_mouse_input(data=dy * 120, flags=MOUSEEVENTF_WHEEL)])
                 except Exception:
                     pass
+            elif cmd == "kd":
+                try:
+                    vk = int(args, 0)
+                    _send_inputs([_key_input(vk=vk, flags=0)])
+                except Exception:
+                    pass
+            elif cmd == "ku":
+                try:
+                    vk = int(args, 0)
+                    _send_inputs([_key_input(vk=vk, flags=KEYEVENTF_KEYUP)])
+                except Exception:
+                    pass
             elif cmd == "m":
                 coords = args.split(",")
                 if len(coords) == 2:
