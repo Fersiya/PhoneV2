@@ -1214,13 +1214,13 @@ fun PcControlMainApp(
                 val digest = java.security.MessageDigest.getInstance("SHA-256")
                 val hashBytes = digest.digest(token.trim().toByteArray(Charsets.UTF_8))
                 val channelId = "pcremote_" + hashBytes.joinToString("") { "%02x".format(it) }.take(16)
-                val conn = URL("https://ntfy.sh/$channelId/raw").openConnection() as HttpURLConnection
+                val conn = URL("https://ntfy.sh/$channelId/raw?poll=1").openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
                 if (conn.responseCode == 200) {
                     val raw = conn.inputStream.bufferedReader().use { it.readText() }
-                    val latestUrl = raw.lines().lastOrNull { it.contains("trycloudflare.com") }?.trim() ?: ""
-                    if (latestUrl.startsWith("https://")) {
+                    val latestUrl = raw.lines().lastOrNull { it.isNotBlank() && (it.startsWith("https://") || it.startsWith("http://")) }?.trim() ?: ""
+                    if (latestUrl.startsWith("https://") || latestUrl.startsWith("http://")) {
                         withContext(Dispatchers.Main) {
                             host = latestUrl
                             save()

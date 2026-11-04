@@ -2130,6 +2130,66 @@ def get_local_ips() -> list:
 _cloudflare_url = ""
 _cloudflare_proc = None
 
+def try_upnp_port_forward(port: int = PORT):
+    """Автоматический проброс порта на домашнем роутере через стандартный UPnP (без сторонних библиотек)."""
+    try:
+        ssdp_request = 'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n'.encode('utf-8')
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2.0)
+        s.sendto(ssdp_request, ("239.255.255.250", 1900))
+        data, _ = s.recvfrom(2048)
+        s.close()
+
+        resp = data.decode("utf-8", errors="ignore")
+        loc_match = re.search(r"LOCATION:\s*([^\r\n]+)", resp, re.IGNORECASE)
+        if not loc_match:
+            return None
+        location_url = loc_match.group(1).strip()
+
+        req = urllib.request.Request(location_url, headers={"User-Agent": "UPnP/1.0"})
+        with urllib.request.urlopen(req, timeout=2.5) as r:
+            xml_data = r.read().decode("utf-8", errors="ignore")
+
+        ctrl_match = re.search(r"<controlURL>([^<]+)</controlURL>", xml_data)
+        if not ctrl_match:
+            return None
+        control_url = urllib.parse.urljoin(location_url, ctrl_match.group(1).strip())
+
+        local_ip = get_local_ips()[0] if get_local_ips() else "127.0.0.1"
+        soap_body = f"""<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<s:Body>
+<u:AddPortMapping xmlns:u="urn:schemas-upnp-org:service:WANIPConnection:1">
+<NewRemoteHost></NewRemoteHost>
+<NewExternalPort>{port}</NewExternalPort>
+<NewProtocol>TCP</NewProtocol>
+<NewInternalPort>{port}</NewInternalPort>
+<NewInternalClient>{local_ip}</NewInternalClient>
+<NewEnabled>1</NewEnabled>
+<NewPortMappingDescription>PC Remote</NewPortMappingDescription>
+<NewLeaseDuration>0</NewLeaseDuration>
+</u:AddPortMapping>
+</s:Body>
+</s:Envelope>"""
+
+        headers = {
+            "SOAPAction": '"urn:schemas-upnp-org:service:WANIPConnection:1#AddPortMapping"',
+            "Content-Type": 'text/xml; charset="utf-8"',
+        }
+        soap_req = urllib.request.Request(control_url, data=soap_body.encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(soap_req, timeout=3.0) as _:
+            pass
+
+        ip_req = urllib.request.Request("https://api.ipify.org", headers={"User-Agent": "curl/7.0"})
+        with urllib.request.urlopen(ip_req, timeout=2.5) as r:
+            ext_ip = r.read().decode("utf-8").strip()
+            if ext_ip:
+                return f"http://{ext_ip}:{port}"
+    except Exception:
+        pass
+    return None
+
 def find_cloudflared_path():
     """Ищет исполняемый файл cloudflared в системе (PATH, папки установки MSI, Downloads или папка проекта)."""
     cand = shutil.which("cloudflared") or shutil.which("cloudflared.exe")
@@ -2183,6 +2243,15 @@ def _cloudflared_worker():
         return
 
     log(f"[Cloudflare Tunnel] Найден cloudflared: {cf_path}")
+    upnp_url = try_upnp_port_forward()
+    if upnp_url:
+        log(f"[UPnP] Роутер успешно открыл внешний порт! Адрес: {upnp_url}")
+        try:
+            channel_id = "pcremote_" + hashlib.sha256(TOKEN.encode("utf-8")).hexdigest()[:16]
+            req = urllib.request.Request(f"https://ntfy.sh/{channel_id}", data=upnp_url.encode("utf-8"), headers={"Title": "PC Remote UPnP"})
+            urllib.request.urlopen(req, timeout=4)
+        except Exception:
+            pass
     log(f"[Cloudflare Tunnel] Запуск автоматического интернет-туннеля для порта {PORT}…")
 
     url_regex = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
