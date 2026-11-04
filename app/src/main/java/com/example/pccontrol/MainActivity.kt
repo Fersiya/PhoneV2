@@ -15,7 +15,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -232,7 +235,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "3.1"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "3.3"
     } catch (_: Exception) {
         "0.0"
     }
@@ -708,6 +711,48 @@ private fun RowScope.CoolButton(
     }
 }
 
+@Composable
+private fun RowScope.HoldScrollButton(
+    text: String,
+    weight: Float = 1f,
+    onScroll: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var isHolding by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isHolding) {
+        if (isHolding) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            while (isActive && isHolding) {
+                onScroll()
+                delay(75L) // Непрерывный плавный скролл при удержании кнопки
+            }
+        }
+    }
+
+    OutlinedButton(
+        onClick = {},
+        contentPadding = KeyPadding,
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (isHolding) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+        ),
+        modifier = Modifier
+            .weight(weight)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isHolding = true
+                        tryAwaitRelease()
+                        isHolding = false
+                    }
+                )
+            }
+    ) {
+        Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
 val mediaSyncMutex = Mutex()
 
 suspend fun uploadMediaFile(
@@ -765,19 +810,22 @@ suspend fun syncPendingMedia(
     context: Context,
     host: String,
     token: String,
+    profileId: String,
     onStatus: (String) -> Unit
 ): Int = withContext(Dispatchers.IO) {
     if (!mediaSyncMutex.tryLock()) return@withContext 0
     try {
         if (host.isBlank() || token.isBlank()) return@withContext 0
         val prefs = context.getSharedPreferences("pc_control_media", Context.MODE_PRIVATE)
-        val uploadedSet = prefs.getStringSet("uploaded_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val uploadedKey = "uploaded_ids_${profileId}"
+        val timestampKey = "sync_start_timestamp_${profileId}"
+        val uploadedSet = prefs.getStringSet(uploadedKey, emptySet())?.toMutableSet() ?: mutableSetOf()
 
-        // Точка отсчёта: загружать СТРОГО только те фото, которые сделаны после момента включения!
-        var syncStartTimestamp = prefs.getLong("sync_start_timestamp", 0L)
+        // Точка отсчёта для конкретного ПК: загружать СТРОГО только те фото, которые сделаны после момента включения!
+        var syncStartTimestamp = prefs.getLong(timestampKey, 0L)
         if (syncStartTimestamp <= 0L) {
             syncStartTimestamp = System.currentTimeMillis() / 1000L
-            prefs.edit().putLong("sync_start_timestamp", syncStartTimestamp).apply()
+            prefs.edit().putLong(timestampKey, syncStartTimestamp).apply()
         }
 
         val proj = arrayOf(
@@ -823,7 +871,7 @@ suspend fun syncPendingMedia(
                 val ok = uploadMediaFile(context, host, token, itemUri, name, size)
                 if (ok) {
                     uploadedSet.add(idStr)
-                    prefs.edit().putStringSet("uploaded_ids", uploadedSet).apply()
+                    prefs.edit().putStringSet(uploadedKey, uploadedSet).apply()
                     uploadedCount++
                 }
             }
@@ -850,9 +898,33 @@ fun PcControlMainApp(
     val prefs = remember { context.getSharedPreferences("pc_control", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
 
-    var host by remember { mutableStateOf(prefs.getString("host", "") ?: "") }
-    var token by remember { mutableStateOf(prefs.getString("token", "") ?: "") }
-    var mac by remember { mutableStateOf(prefs.getString("mac", "") ?: "") }
+    val initialProfiles = remember {
+        val raw = prefs.getString("saved_profiles_json", "") ?: ""
+        if (raw.isNotBlank()) {
+            try {
+                val arr = JSONArray(raw)
+                List(arr.length()) { i ->
+                    val o = arr.getJSONObject(i)
+                    PcProfile(o.getString("id"), o.getString("name"), o.getString("host"), o.getString("token"), o.getString("mac"))
+                }
+            } catch (_: Exception) {
+                listOf(PcProfile("1", "Основной ПК", prefs.getString("host", "") ?: "", prefs.getString("token", "") ?: "", prefs.getString("mac", "") ?: ""))
+            }
+        } else {
+            listOf(PcProfile("1", "Основной ПК", prefs.getString("host", "") ?: "", prefs.getString("token", "") ?: "", prefs.getString("mac", "") ?: ""))
+        }
+    }
+    var profiles by remember { mutableStateOf(initialProfiles) }
+    val initialActiveId = remember {
+        val savedId = prefs.getString("active_profile_id", "") ?: ""
+        if (initialProfiles.any { it.id == savedId }) savedId else (initialProfiles.firstOrNull()?.id ?: "1")
+    }
+    var activeProfileId by remember { mutableStateOf(initialActiveId) }
+    val initialActiveProfile = profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull()
+
+    var host by remember { mutableStateOf(initialActiveProfile?.host ?: prefs.getString("host", "") ?: "") }
+    var token by remember { mutableStateOf(initialActiveProfile?.token ?: prefs.getString("token", "") ?: "") }
+    var mac by remember { mutableStateOf(initialActiveProfile?.mac ?: prefs.getString("mac", "") ?: "") }
     var installedApkHash by remember { mutableStateOf(prefs.getString("installed_apk_hash", "") ?: "") }
     var mouseSensitivity by remember { mutableFloatStateOf(prefs.getFloat("mouse_sens", 1.6f)) }
 
@@ -868,7 +940,7 @@ fun PcControlMainApp(
             autoSyncMedia = true
             prefs.edit().putBoolean("auto_sync_media", true).apply()
             scope.launch {
-                syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
             }
         } else {
             mediaSyncStatus = "Разрешите доступ к фото для автозагрузки"
@@ -889,6 +961,16 @@ fun PcControlMainApp(
     var ramUsedGb by remember { mutableStateOf(0.0) }
     var disks by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
 
+    // Состояние сворачивания карточек в Окна/Софт
+    var isProgramsExpanded by remember { mutableStateOf(true) }
+    var isWindowsExpanded by remember { mutableStateOf(false) }
+    var isExplorerExpanded by remember { mutableStateOf(true) }
+
+    // Настройки трансляции и полноэкранный режим
+    var showStreamFpsOverlay by remember { mutableStateOf(prefs.getBoolean("show_stream_fps_overlay", true)) }
+    var isFullscreenStream by remember { mutableStateOf(false) }
+    var isFsControlsVisible by remember { mutableStateOf(true) }
+
     // Проводник файлов ПК
     var fileBrowsePath by remember { mutableStateOf("D:\\") }
     var fileBrowseParent by remember { mutableStateOf("") }
@@ -897,28 +979,7 @@ fun PcControlMainApp(
     var fileBrowseStatus by remember { mutableStateOf("") }
     var isBrowsingFiles by remember { mutableStateOf(false) }
 
-    // Профили ПК
-    var profiles by remember {
-        mutableStateOf(
-            run {
-                val raw = prefs.getString("saved_profiles_json", "") ?: ""
-                if (raw.isNotBlank()) {
-                    try {
-                        val arr = JSONArray(raw)
-                        List(arr.length()) { i ->
-                            val o = arr.getJSONObject(i)
-                            PcProfile(o.getString("id"), o.getString("name"), o.getString("host"), o.getString("token"), o.getString("mac"))
-                        }
-                    } catch (_: Exception) {
-                        listOf(PcProfile("1", "Основной ПК", host, token, mac))
-                    }
-                } else {
-                    listOf(PcProfile("1", "Основной ПК", host, token, mac))
-                }
-            }
-        )
-    }
-    var activeProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id ?: "1") }
+    // Управление профилями ПК
     var showAddProfileDialog by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
 
@@ -1257,7 +1318,8 @@ fun PcControlMainApp(
                 override fun onChange(selfChange: Boolean, uri: Uri?) {
                     super.onChange(selfChange, uri)
                     scope.launch {
-                        syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                        delay(1500) // Ждём завершения записи файла камерой на диск
+                        syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
                     }
                 }
             }
@@ -1267,7 +1329,7 @@ fun PcControlMainApp(
                     true,
                     observer
                 )
-                syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
                 awaitCancellation()
             } finally {
                 try {
@@ -1343,18 +1405,6 @@ fun PcControlMainApp(
                 try {
                     val fullPath = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) fileBrowsePath + entry.name else "$fileBrowsePath\\${entry.name}"
                     val enc = java.net.URLEncoder.encode(fullPath, "UTF-8")
-                    val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                    downloadDir.mkdirs()
-                    var destFile = File(downloadDir, entry.name)
-                    if (destFile.exists()) {
-                        val baseName = entry.name.substringBeforeLast(".")
-                        val ext = if (entry.name.contains(".")) ".${entry.name.substringAfterLast(".")}" else ""
-                        var idx = 1
-                        while (destFile.exists()) {
-                            destFile = File(downloadDir, "${baseName}_$idx$ext")
-                            idx++
-                        }
-                    }
                     val conn = URL("http://$host:$PORT/files/download?path=$enc").openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.connectTimeout = 5000
@@ -1362,13 +1412,39 @@ fun PcControlMainApp(
                     val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
                     conn.setRequestProperty("X-Token", safeToken)
                     if (conn.responseCode == 200) {
-                        conn.inputStream.use { input ->
-                            FileOutputStream(destFile).use { output ->
-                                input.copyTo(output)
+                        var savedOk = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val values = android.content.ContentValues().apply {
+                                put(MediaStore.Downloads.DISPLAY_NAME, entry.name)
+                                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                                put(MediaStore.Downloads.IS_PENDING, 1)
                             }
+                            val resolver = context.contentResolver
+                            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                            if (uri != null) {
+                                try {
+                                    resolver.openOutputStream(uri)?.use { output ->
+                                        conn.inputStream.use { input -> input.copyTo(output) }
+                                    }
+                                    values.clear()
+                                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                                    resolver.update(uri, values, null, null)
+                                    savedOk = true
+                                } catch (_: Exception) {
+                                    resolver.delete(uri, null, null)
+                                }
+                            }
+                        } else {
+                            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                            downloadDir.mkdirs()
+                            val destFile = File(downloadDir, entry.name)
+                            conn.inputStream.use { input ->
+                                FileOutputStream(destFile).use { output -> input.copyTo(output) }
+                            }
+                            savedOk = true
                         }
                         conn.disconnect()
-                        "Файл ${destFile.name} сохранён в Загрузки ✔"
+                        if (savedOk) "Файл ${entry.name} сохранён в Загрузки ✔" else "Не удалось сохранить файл"
                     } else {
                         conn.disconnect()
                         "Ошибка скачивания: HTTP ${conn.responseCode}"
@@ -1650,7 +1726,7 @@ fun PcControlMainApp(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Трансляция экрана", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            if (isStreamingActive) {
+                            if (isStreamingActive && showStreamFpsOverlay) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Box(modifier = Modifier.size(8.dp).background(Color(0xFF10B981), CircleShape))
                                     Text("Прямой эфир", color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
@@ -1812,9 +1888,14 @@ fun PcControlMainApp(
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 CoolButton("ЛКМ") { sendMouseAction("left") }
                                 CoolButton("ПКМ") { sendMouseAction("right") }
-                                CoolButton("⬆ Скролл") { sendMouseAction("scroll", dy = 3) }
-                                CoolButton("⬇ Скролл") { sendMouseAction("scroll", dy = -3) }
+                                HoldScrollButton("⬆ Скролл") { sendMouseAction("scroll", dy = 3) }
+                                HoldScrollButton("⬇ Скролл") { sendMouseAction("scroll", dy = -3) }
                                 CoolButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CoolButton(if (isFullscreenStream) "✕ Выйти из полного экрана" else "⛶ Во весь экран", filled = true, accentColor = Color(0xFF0284C7)) {
+                                    isFullscreenStream = !isFullscreenStream
+                                }
                             }
                         }
                     }
@@ -1839,7 +1920,8 @@ fun PcControlMainApp(
                         // Чувствительность мыши
                         Slider(
                             value = mouseSensitivity,
-                            onValueChange = { mouseSensitivity = it; save() },
+                            onValueChange = { mouseSensitivity = it },
+                            onValueChangeFinished = { save() },
                             valueRange = 0.8f..3.0f,
                             modifier = Modifier.fillMaxWidth().height(24.dp)
                         )
@@ -1888,8 +1970,8 @@ fun PcControlMainApp(
                             CoolButton("ЛКМ") { sendMouseAction("left") }
                             CoolButton("2× Клик") { sendMouseAction("double") }
                             CoolButton("ПКМ") { sendMouseAction("right") }
-                            CoolButton("Скролл ⬆") { sendMouseAction("scroll", dy = 3) }
-                            CoolButton("Скролл ⬇") { sendMouseAction("scroll", dy = -3) }
+                            HoldScrollButton("Скролл ⬆") { sendMouseAction("scroll", dy = 3) }
+                            HoldScrollButton("Скролл ⬇") { sendMouseAction("scroll", dy = -3) }
                         }
 
                         Row(
@@ -1916,16 +1998,13 @@ fun PcControlMainApp(
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("⌨ Без Enter") { sendTypeText(enter = false) }
-                            CoolButton("⌫ Стереть") { run("/media/key_backspace", refreshAfter = false) }
-                            CoolButton("Пробел") { run("/media/key_space", refreshAfter = false) }
                             CoolButton("Esc") { run("/media/key_esc", refreshAfter = false) }
+                            CoolButton("Alt+F4") { run("/media/alt_f4", refreshAfter = true) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("📋 Буфер → ПК") { sendPhoneClipboardToPc() }
                             CoolButton("📥 Буфер ← ПК") { fetchPcClipboardToPhone() }
-                            CoolButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
-                            CoolButton("Alt+F4") { run("/media/alt_f4", refreshAfter = true) }
                         }
                     }
                 }
@@ -2486,7 +2565,7 @@ fun PcControlMainApp(
                                                 .putLong("sync_start_timestamp", nowSec)
                                                 .apply()
                                             scope.launch {
-                                                syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                                                syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
                                             }
                                         } else {
                                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -2516,7 +2595,7 @@ fun PcControlMainApp(
                                 onClick = {
                                     scope.launch {
                                         mediaSyncStatus = "Проверяю новые фото и видео…"
-                                        val count = syncPendingMedia(context, host.trim(), token.trim()) { mediaSyncStatus = it }
+                                        val count = syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
                                         if (count == 0) mediaSyncStatus = "Все фото и видео уже на ПК ✔"
                                     }
                                 },
@@ -2583,6 +2662,122 @@ fun PcControlMainApp(
                 TextButton(onClick = { showAddProfileDialog = false }) { Text("Отмена") }
             }
         )
+    }
+
+    // Полноэкранный режим трансляции экрана с Pinch-to-zoom жестами
+    if (isFullscreenStream) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            val currentBmp = screenBitmap
+            if (currentBmp != null) {
+                Image(
+                    bitmap = currentBmp,
+                    contentDescription = "Полный экран",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, _, zoom, _ ->
+                                streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
+                            }
+                        }
+                        .pointerInput(host, token, streamZoom) {
+                            detectTapGestures(
+                                onTap = { offset ->
+                                    if (size.width > 0 && size.height > 0) {
+                                        val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                        val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                        sendMouseAction("abs_click", nx = nx, ny = ny)
+                                    }
+                                },
+                                onDoubleTap = { offset ->
+                                    if (size.width > 0 && size.height > 0) {
+                                        val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                        val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                        sendMouseAction("abs_double", nx = nx, ny = ny)
+                                    }
+                                },
+                                onLongPress = { offset ->
+                                    if (size.width > 0 && size.height > 0) {
+                                        val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                        val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                        sendMouseAction("abs_right", nx = nx, ny = ny)
+                                    }
+                                }
+                            )
+                        }
+                )
+            } else {
+                Text("Ожидание видеопотока…", color = Color.White, modifier = Modifier.align(Alignment.Center))
+            }
+
+            if (showStreamFpsOverlay) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.75f))
+                        .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "🟢 ${liveStreamFps} FPS • ${liveStreamPing} мс",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00E5FF)
+                    )
+                }
+            }
+
+            // Выдвижная плавающая панель управления
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 20.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (isFsControlsVisible) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color.Black.copy(alpha = 0.85f),
+                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ЛКМ", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("ПКМ", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { streamZoom = 1f }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("1× Сброс", fontSize = 12.sp) }
+                                OutlinedButton(onClick = { isFullscreenStream = false }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))) { Text("✕ Выйти", fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.75f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clickable { isFsControlsVisible = !isFsControlsVisible }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(if (isFsControlsVisible) "▼" else "▲", color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Диалог подтверждения выключения/сна
