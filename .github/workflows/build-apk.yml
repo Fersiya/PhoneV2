@@ -3,7 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md", "server.py", "*.bat", "*.vbs"]
+    paths-ignore: ["**.md", "*.bat"]
   workflow_dispatch:
 
 jobs:
