@@ -2169,48 +2169,6 @@ fun PcControlMainApp(
                     }
                 }
 
-                var timerMinutesInput by remember { mutableStateOf("30") }
-
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Таймер сна и выключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
-                        OutlinedTextField(
-                            value = timerMinutesInput,
-                            onValueChange = { timerMinutesInput = it.filter { ch -> ch.isDigit() } },
-                            label = { Text("Время в минутах (например: 45)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("+15м") {
-                                val cur = timerMinutesInput.toIntOrNull() ?: 0
-                                timerMinutesInput = (cur + 15).toString()
-                            }
-                            CoolButton("+30м") {
-                                val cur = timerMinutesInput.toIntOrNull() ?: 0
-                                timerMinutesInput = (cur + 30).toString()
-                            }
-                            CoolButton("+60м") {
-                                val cur = timerMinutesInput.toIntOrNull() ?: 0
-                                timerMinutesInput = (cur + 60).toString()
-                            }
-                            CoolButton("Сброс") { timerMinutesInput = "30" }
-                        }
-
-                        val chosenMinutes = timerMinutesInput.toIntOrNull() ?: 30
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CoolButton("⏱ Выключить через $chosenMinutes м", accentColor = Color(0xFFDC2626), filled = true) {
-                                startCustomTimer(chosenMinutes, "shutdown")
-                            }
-                            CoolButton("💤 Сон через $chosenMinutes м", accentColor = Color(0xFF7C3AED), filled = true) {
-                                startCustomTimer(chosenMinutes, "sleep")
-                            }
-                        }
-                    }
-                }
             }
 
             // ==================== 6. ОПЦИИ И НАСТРОЙКИ ====================
@@ -2832,12 +2790,56 @@ fun PcControlMainApp(
     }
 
     pending?.let { (path, title) ->
+        val timerAction = when (path) {
+            "/shutdown" -> "shutdown"
+            "/sleep" -> "sleep"
+            else -> null
+        }
+        var timerMinutesInput by remember(path) { mutableStateOf("30") }
+        val minutes = (timerMinutesInput.toIntOrNull() ?: 0).coerceIn(0, 1440)
         AlertDialog(
             onDismissRequest = { pending = null },
-            title = { Text("$title?") },
-            text = { Text("Команда будет выполнена на ПК немедленно.") },
+            title = { Text(title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (timerAction == null) {
+                        Text("Команда будет выполнена на ПК немедленно.")
+                    } else {
+                        Button(
+                            onClick = { pending = null; run(path) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Сейчас", fontWeight = FontWeight.Bold) }
+                        Text("или через:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(15, 30, 45, 60, 90, 120).forEach { m ->
+                                FilterChip(
+                                    selected = minutes == m,
+                                    onClick = { timerMinutesInput = m.toString() },
+                                    label = { Text("$m мин") }
+                                )
+                            }
+                        }
+                        OutlinedTextField(
+                            value = timerMinutesInput,
+                            onValueChange = { timerMinutesInput = it.filter { ch -> ch.isDigit() }.take(4) },
+                            label = { Text("Свои минуты") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { pending = null; run(path) }) { Text("Да") }
+                if (timerAction == null) {
+                    TextButton(onClick = { pending = null; run(path) }) { Text("Да") }
+                } else {
+                    TextButton(
+                        enabled = minutes > 0,
+                        onClick = { pending = null; startCustomTimer(minutes, timerAction) }
+                    ) { Text("⏱ Через $minutes мин") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { pending = null }) { Text("Отмена") }
