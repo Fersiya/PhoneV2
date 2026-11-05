@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -120,7 +121,9 @@ import kotlin.math.roundToInt
 @Composable
 fun PcControlMainApp(
     incomingSharedUrl: String? = null,
-    onSharedUrlConsumed: () -> Unit = {}
+    onSharedUrlConsumed: () -> Unit = {},
+    themeId: String = "cyber",
+    onThemeChange: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -648,6 +651,19 @@ fun PcControlMainApp(
         if (connMode != "remote" && lan.isNotBlank() && pingOk(lan, 1000)) {
             host = lan
             routeLabel = "🏠 Дома (Wi-Fi)"
+            // Дома подстраховываем «вне дома»: поднимаем туннель на ПК и запоминаем его свежий адрес
+            if (connMode != "lan") {
+                try {
+                    val ts = getTunnelStatus(lan, token.trim())
+                    if (ts.installed && !ts.running) {
+                        toggleTunnel(lan, token.trim(), true)
+                    } else if (ts.running && ts.url.isNotBlank() && ts.url != remoteHost) {
+                        remoteHost = ts.url
+                        save()
+                    }
+                } catch (_: Exception) {
+                }
+            }
         } else if (connMode != "lan") {
             if (rem.isBlank() || !pingOk(rem, 4000)) {
                 val fresh = fetchRemoteFromCloud()
@@ -1460,8 +1476,8 @@ fun PcControlMainApp(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 listOf(
-                                    Triple(0, "⚡ 60 FPS Турбо", Color(0xFF00F0FF)),
-                                    Triple(1, "⚖️ Баланс", Color(0xFFB388FF)),
+                                    Triple(0, "⚡ 60 FPS Турбо", MaterialTheme.colorScheme.primary),
+                                    Triple(1, "⚖️ Баланс", MaterialTheme.colorScheme.secondary),
                                     Triple(2, "🔍 FHD 1080p", Color(0xFF10B981))
                                 ).forEach { (presetIdx, labelText, accent) ->
                                     FilterChip(
@@ -1574,7 +1590,7 @@ fun PcControlMainApp(
                                             .padding(8.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(Color.Black.copy(alpha = 0.75f))
-                                            .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                             .clickable {
                                                 showStreamFpsOverlay = false
@@ -1791,25 +1807,6 @@ fun PcControlMainApp(
                             valueRange = 0f..100f,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                         )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(0 to "🔇 0%", 25 to "25%", 50 to "50%", 75 to "75%", 100 to "🔊 100%").forEach { (v, lbl) ->
-                                OutlinedButton(
-                                    onClick = {
-                                        volumeSlider = v.toFloat()
-                                        sendExactVolume(v)
-                                    },
-                                    modifier = Modifier.weight(1f).height(32.dp),
-                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(lbl, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -2059,12 +2056,12 @@ fun PcControlMainApp(
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text("Процессор", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("$cpuPercent%", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (cpuPercent > 80) Color(0xFFFF5252) else Color(0xFF00E5FF))
+                                        Text("$cpuPercent%", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (cpuPercent > 80) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary)
                                     }
                                     LinearProgressIndicator(
                                         progress = { (cpuPercent / 100f).coerceIn(0f, 1f) },
                                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                                        color = if (cpuPercent > 80) Color(0xFFFF5252) else Color(0xFF00E5FF),
+                                        color = if (cpuPercent > 80) Color(0xFFFF5252) else MaterialTheme.colorScheme.primary,
                                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                                     )
                                 }
@@ -2073,12 +2070,12 @@ fun PcControlMainApp(
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text("ОЗУ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(if (ramTotalGb > 0) "${ramUsedGb}/${ramTotalGb} ГБ" else "$ramPercent%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (ramPercent > 85) Color(0xFFFF5252) else Color(0xFFB388FF))
+                                        Text(if (ramTotalGb > 0) "${ramUsedGb}/${ramTotalGb} ГБ" else "$ramPercent%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (ramPercent > 85) Color(0xFFFF5252) else MaterialTheme.colorScheme.secondary)
                                     }
                                     LinearProgressIndicator(
                                         progress = { (ramPercent / 100f).coerceIn(0f, 1f) },
                                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                                        color = if (ramPercent > 85) Color(0xFFFF5252) else Color(0xFFB388FF),
+                                        color = if (ramPercent > 85) Color(0xFFFF5252) else MaterialTheme.colorScheme.secondary,
                                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                                     )
                                 }
@@ -2251,6 +2248,17 @@ fun PcControlMainApp(
 
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Оформление", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AppThemes.forEach { (id, title, scheme) ->
+                                FilterChip(
+                                    selected = themeId == id,
+                                    onClick = { onThemeChange(id) },
+                                    leadingIcon = { Box(modifier = Modifier.size(12.dp).background(scheme.primary, CircleShape)) },
+                                    label = { Text(title) }
+                                )
+                            }
+                        }
                         Text("Настройки подключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2658,31 +2666,12 @@ fun PcControlMainApp(
                         }
                         .pointerInput(isFsMouseMode, host, token) {
                             if (isFsMouseMode) {
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        val sw = size.width.toFloat()
-                                        val sh = size.height.toFloat()
-                                        if (sw > 0 && sh > 0) {
-                                            val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
-                                            val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                            val nx = (localX / sw).coerceIn(0f, 1f)
-                                            val ny = (localY / sh).coerceIn(0f, 1f)
-                                            sendAbsMouse(nx, ny)
-                                        }
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        val sw = size.width.toFloat()
-                                        val sh = size.height.toFloat()
-                                        if (sw > 0 && sh > 0) {
-                                            val localX = (change.position.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
-                                            val localY = (change.position.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                            val nx = (localX / sw).coerceIn(0f, 1f)
-                                            val ny = (localY / sh).coerceIn(0f, 1f)
-                                            sendAbsMouse(nx, ny)
-                                        }
-                                    }
-                                )
+                                detectDragGestures { change, dragAmount ->
+                                    // Как тачпад: курсор двигается от текущего места, а не прыгает в точку касания
+                                    change.consume()
+                                    accDx += dragAmount.x * mouseSensitivity / streamZoom
+                                    accDy += dragAmount.y * mouseSensitivity / streamZoom
+                                }
                             } else {
                                 detectTransformGestures { _, pan, zoom, _ ->
                                     if (zoom != 1f) {
@@ -2714,8 +2703,7 @@ fun PcControlMainApp(
                                         val sh = size.height.toFloat()
                                         val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
                                         val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                        val nx = (localX / sw).coerceIn(0f, 1f)
-                                        val ny = (localY / sh).coerceIn(0f, 1f)
+                                        val (nx, ny) = fitNormalized(localX, localY, sw, sh, currentBmp.width, currentBmp.height)
                                         sendMouseAction("abs_click", nx = nx, ny = ny)
                                     } else {
                                         sendMouseAction("left")
@@ -2728,8 +2716,7 @@ fun PcControlMainApp(
                                         val sh = size.height.toFloat()
                                         val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
                                         val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                        val nx = (localX / sw).coerceIn(0f, 1f)
-                                        val ny = (localY / sh).coerceIn(0f, 1f)
+                                        val (nx, ny) = fitNormalized(localX, localY, sw, sh, currentBmp.width, currentBmp.height)
                                         sendMouseAction("abs_double", nx = nx, ny = ny)
                                     } else {
                                         sendMouseAction("double")
@@ -2742,8 +2729,7 @@ fun PcControlMainApp(
                                         val sh = size.height.toFloat()
                                         val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
                                         val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                        val nx = (localX / sw).coerceIn(0f, 1f)
-                                        val ny = (localY / sh).coerceIn(0f, 1f)
+                                        val (nx, ny) = fitNormalized(localX, localY, sw, sh, currentBmp.width, currentBmp.height)
                                         sendMouseAction("abs_right", nx = nx, ny = ny)
                                     } else {
                                         sendMouseAction("right")
@@ -2764,7 +2750,7 @@ fun PcControlMainApp(
                         .padding(16.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.Black.copy(alpha = 0.75f))
-                        .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .clickable {
                             showStreamFpsOverlay = false
@@ -2788,7 +2774,7 @@ fun PcControlMainApp(
                         Surface(
                             shape = RoundedCornerShape(20.dp),
                             color = Color.Black.copy(alpha = 0.75f),
-                            border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
                             modifier = Modifier.padding(horizontal = 6.dp)
                         ) {
                             Row(
@@ -2800,9 +2786,9 @@ fun PcControlMainApp(
                                     onClick = { isFsMouseMode = !isFsMouseMode },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     shape = RoundedCornerShape(12.dp),
-                                    colors = if (isFsMouseMode) ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFF00E5FF).copy(alpha = 0.25f)) else ButtonDefaults.outlinedButtonColors()
+                                    colors = if (isFsMouseMode) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)) else ButtonDefaults.outlinedButtonColors()
                                 ) {
-                                    Text(if (isFsMouseMode) "🎯 Мышь" else "✋ Обзор", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isFsMouseMode) Color(0xFF00E5FF) else Color.White)
+                                    Text(if (isFsMouseMode) "🎯 Мышь" else "✋ Обзор", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isFsMouseMode) MaterialTheme.colorScheme.primary else Color.White)
                                 }
                                 OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("ЛКМ", fontSize = 11.sp) }
                                 OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("ПКМ", fontSize = 11.sp) }

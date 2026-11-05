@@ -125,3 +125,17 @@ fun isRemoteAddress(h: String): Boolean {
     val t = h.trim()
     return t.isNotEmpty() && !isLanAddress(t) && (t.startsWith("https://") || t.contains("."))
 }
+
+/**
+ * Координаты касания (в пикселях области sw×sh, уже без зума/сдвига) -> доли 0..1 внутри картинки,
+ * вписанной в область с чёрными полями (ContentScale.Fit). Без этого края экрана ПК недостижимы.
+ */
+fun fitNormalized(localX: Float, localY: Float, sw: Float, sh: Float, bw: Int, bh: Int): Pair<Float, Float> {
+    if (bw <= 0 || bh <= 0 || sw <= 0f || sh <= 0f) return Pair((localX / sw).coerceIn(0f, 1f), (localY / sh).coerceIn(0f, 1f))
+    val scale = minOf(sw / bw, sh / bh)
+    val dw = bw * scale
+    val dh = bh * scale
+    val ox = (sw - dw) / 2f
+    val oy = (sh - dh) / 2f
+    return Pair(((localX - ox) / dw).coerceIn(0f, 1f), ((localY - oy) / dh).coerceIn(0f, 1f))
+}

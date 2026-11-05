@@ -12,20 +12,29 @@ import androidx.compose.ui.Modifier
 
 class MainActivity : ComponentActivity() {
     private var sharedUrlState = mutableStateOf<String?>(null)
+    private val themeState = mutableStateOf("cyber")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         extractSharedUrl(intent)?.let { sharedUrlState.value = it }
 
+        val appPrefs = getSharedPreferences("pc_control", MODE_PRIVATE)
+        themeState.value = appPrefs.getString("app_theme", "cyber") ?: "cyber"
+
         setContent {
-            MaterialTheme(colorScheme = CyberDarkPalette) {
+            MaterialTheme(colorScheme = colorSchemeFor(themeState.value)) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     PcControlMainApp(
                         incomingSharedUrl = sharedUrlState.value,
-                        onSharedUrlConsumed = { sharedUrlState.value = null }
+                        onSharedUrlConsumed = { sharedUrlState.value = null },
+                        themeId = themeState.value,
+                        onThemeChange = { id ->
+                            themeState.value = id
+                            appPrefs.edit().putString("app_theme", id).apply()
+                        }
                     )
                 }
             }

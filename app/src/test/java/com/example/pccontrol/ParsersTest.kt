@@ -100,4 +100,19 @@ class ParsersTest {
         assertFalse(isRemoteAddress("192.168.0.10"))
         assertFalse(isRemoteAddress(""))
     }
+
+    @Test
+    fun testFitNormalized_letterbox() {
+        // экран 2000x1000, картинка 16:9 (1600x900) -> по высоте вписана полностью, слева/справа поля
+        val (l, _) = fitNormalized(0f, 500f, 2000f, 1000f, 1600, 900)
+        val (r, _) = fitNormalized(2000f, 500f, 2000f, 1000f, 1600, 900)
+        val (c, cy) = fitNormalized(1000f, 500f, 2000f, 1000f, 1600, 900)
+        assertEquals(0f, l, 0.001f)
+        assertEquals(1f, r, 0.001f)
+        assertEquals(0.5f, c, 0.001f)
+        assertEquals(0.5f, cy, 0.001f)
+        // край картинки (а не края экрана) даёт 0 и 1
+        val edgeX = (2000f - 1000f * 16f / 9f) / 2f
+        assertEquals(0f, fitNormalized(edgeX, 500f, 2000f, 1000f, 1600, 900).first, 0.001f)
+    }
 }
