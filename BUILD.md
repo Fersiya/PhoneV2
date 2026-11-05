@@ -1,28 +1,26 @@
-# Сборка приложения
+# Сборка приложения PC Control
 
-## Вариант 1. GitHub Actions (основной)
+Это готовый проект Android Studio. Код экрана лежит в
+`app/src/main/java/com/example/pccontrol/MainActivity.kt`.
 
-Каждый push в `main` (кроме `*.md`, `server.py`, `*.bat`) запускает сборку.
-Готовый APK: Actions → последний запуск → артефакт `pc-control-apk`.
+## Вариант 1. Android Studio
 
-### Свой ключ подписи (один раз)
+1. Распакуй архив в любую папку.
+2. Android Studio → File → Open → выбери папку `pc-control-app`.
+3. Дождись окончания Gradle Sync (первый раз он скачивает зависимости, это несколько минут).
+   Если Studio предложит обновить версии Gradle или плагина, соглашайся.
+4. Подключи телефон по USB (включи «Отладку по USB») и нажми Run ▶.
+   Или Build → Build Bundle(s) / APK(s) → Build APK(s), готовый файл будет в `app/build/outputs/apk/debug/app-debug.apk`.
 
-Без ключа CI собирает debug-APK, у которого подпись меняется от сборки к сборке — обновление «поверх» может не пройти.
-Чтобы подпись была постоянной:
+## Вариант 2. APK в облаке через GitHub (без Android Studio)
 
-1. Создай ключ: `keytool -genkeypair -v -keystore pccontrol-release.jks -alias pccontrol -keyalg RSA -keysize 2048 -validity 10000`
-2. В репозитории: Settings → Secrets and variables → Actions → New repository secret:
-   - `RELEASE_KEYSTORE_B64` — содержимое файла в base64 (`base64 -w0 pccontrol-release.jks`)
-   - `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`
-3. Сам `.jks` в репозиторий **не коммить** (он в `.gitignore`) и сохрани резервную копию: потеряешь — придётся переустанавливать приложение.
-
-Версия растёт автоматически: `versionCode = 100 + номер запуска Actions`.
-
-## Вариант 2. Android Studio
-
-File → Open → папка проекта, дождись Gradle Sync, Run ▶ на телефоне с включённой отладкой по USB.
-Gradle wrapper в репозитории пока нет (CI ставит Gradle 8.9 сам); Studio при открытии предложит свою версию.
+1. Создай аккаунт на github.com и новый репозиторий (можно приватный), ветка `main`.
+2. Загрузи в него всё содержимое папки проекта, включая скрытую папку `.github`
+   (на странице репозитория: Add file → Upload files, перетащи файлы и папки).
+3. Открой вкладку Actions → «Build APK» → при необходимости нажми Run workflow.
+4. Через 3–6 минут в запуске появится артефакт `pc-control-apk`. Скачай, достань из архива `app-debug.apk`.
+5. Перенеси APK на телефон и установи (Android спросит разрешение на установку из неизвестных источников).
 
 ## Если сборка падает
 
-Скопируй текст ошибки (в Studio — вкладка Build, на GitHub — лог упавшего шага) и пришли его.
+Скопируй текст ошибки (в Android Studio вкладка Build, на GitHub лог шага «Build debug APK») и пришли его.

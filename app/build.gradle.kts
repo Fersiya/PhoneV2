@@ -17,11 +17,9 @@ android {
         versionName = "5.1"
     }
 
-    // Старый общий debug-ключ из репозитория убран: без файла Gradle берёт обычный локальный debug-ключ
-    val legacyDebugKeystore = file("../debug.keystore")
-    if (legacyDebugKeystore.exists()) {
-        signingConfigs.create("customDebug") {
-            storeFile = legacyDebugKeystore
+    signingConfigs {
+        create("customDebug") {
+            storeFile = file("../debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -41,12 +39,12 @@ android {
 
     buildTypes {
         debug {
-            signingConfigs.findByName("customDebug")?.let { signingConfig = it }
+            signingConfig = signingConfigs.getByName("customDebug")
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }

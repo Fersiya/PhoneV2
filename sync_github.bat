@@ -3,48 +3,42 @@ setlocal
 cd /d "%~dp0"
 
 echo ========================================================
-echo   Sync to GitHub (PC Remote)
+echo   Auto-Sync to GitHub (PC Remote)
 echo ========================================================
 echo.
 
 where git >nul 2>&1
 if errorlevel 1 (
-    echo [!] Git is not installed. Download from: https://git-scm.com/
+    echo [!] Git is not installed on PC. Download from: https://git-scm.com/
     pause
     exit /b 1
 )
 
-set "MSG="
-set /p MSG=Commit message (Enter = Update): 
-if "%MSG%"=="" set "MSG=Update"
-
-echo [1/3] Committing...
+echo [1/3] Adding changes...
 git add -A
-git commit -m "%MSG%"
 
-echo [2/3] Getting changes from GitHub...
-git pull --rebase origin main
-if errorlevel 1 (
-    echo.
-    echo [!] Rebase conflict. Nothing was pushed.
-    echo     Fix the files, then run: git rebase --continue
-    echo     Or cancel with: git rebase --abort
-    pause
-    exit /b 1
-)
+echo [2/3] Committing...
+git commit -m "Auto-update (%date% %time%)" >nul 2>&1
 
-echo [3/3] Pushing...
+echo [3/3] Synchronizing with GitHub...
+git pull --rebase origin main >nul 2>&1
 git push origin main
-if errorlevel 1 (
-    echo.
-    echo [!] Push failed. Check internet or access to the repository.
-    echo     Force push is NOT used on purpose, so nothing gets overwritten.
-    pause
-    exit /b 1
-)
+if %errorlevel% equ 0 goto push_success
 
 echo.
+echo [!] Normal push failed. Trying push with force...
+git push --force origin main
+if %errorlevel% equ 0 goto push_success
+
+echo.
+echo [!] Push failed. Check your internet connection or GitHub repository.
+pause
+exit /b 1
+
+:push_success
+echo.
 echo ========================================================
-echo   [OK] Done. GitHub Actions is building the new APK.
+echo   [OK] Success! Changes pushed to GitHub!
+echo   GitHub Actions is now compiling the new APK.
 echo ========================================================
 pause
