@@ -7,38 +7,22 @@ Android-приложение (Jetpack Compose) + Python-сервер для Wind
 ## Схема
 
 ```
-Телефон  ──(Tailscale / Wi-Fi / Cloudflare-туннель)──►  server.py на ПК (порт 8765, TCP и UDP)
+Телефон  ──(Tailscale / Wi-Fi / Cloudflare-туннель)──►  сервер на ПК (порт 8765, TCP и UDP)
 ```
 
 ## Сервер (ПК)
 
-Python-сервер (`server.py`) и скрипт автозагрузки живут на ПК и в этот репозиторий не входят.
-Сервер слушает порт 8765 (TCP и UDP); токен и настройки лежат в его `config.json`.
+Сервер живёт в отдельном репозитории: [PhoneV2-server](https://github.com/Fersiya/PhoneV2-server).
+Он слушает порт 8765 (TCP и UDP); токен и настройки лежат в его `config.json`.
 
 ## Установка приложения
 
 APK собирает GitHub Actions (вкладка Actions → «Build APK» → артефакт `pc-control-apk`).
-Положи APK в папку `updates/` рядом с `server.py`, и приложение само предложит обновиться.
+Положи APK в папку `updates/` рядом с сервером, и приложение само предложит обновиться.
 Подробности и настройка своего ключа подписи — в [BUILD.md](BUILD.md).
 
 ## Архитектура проекта
 
-### Сервер (`server/`)
-- `server/winapi.py` — WinAPI структуры, константы и GDI+ инициализация через `ctypes`
-- `server/capture.py` — захват экрана и сжатие в JPEG памяти с отрисовкой курсора
-- `server/input.py` — эмуляция мыши, клавиатуры и UTF-16 ввода через `SendInput`
-- `server/media_keys.py` — управление громкостью, системными медиа-клавишами и плеером YouTube
-- `server/windows.py` — перечисление окон, фокус, сворачивание и управление
-- `server/apps.py` — запуск и завершение программ, добавление пользовательских приложений
-- `server/power.py` — выключение, перезагрузка, сон, таймеры и выключение монитора
-- `server/clipboard.py` — чтение и запись системного буфера обмена Windows
-- `server/system_info.py` — телеметрия CPU, RAM, накопителей, аптайма и громкости
-- `server/files.py` — проводник файлов, скачивание и загрузка фото с защитой от Path Traversal
-- `server/ota.py` — парсер бинарного AXML в APK и проверка OTA-обновлений
-- `server/network.py` — UDP мышь/геймпад (125 Гц), UPnP, Wi-Fi Discovery и Cloudflare-туннель
-- `server/auth.py` — авторизация по HMAC-токену с защитой от брутфорса (блокировка на 15 мин)
-- `server/handler.py` — HTTP/MJPEG роутер (`ThreadingHTTPServer`)
-- `server.py` — лаконичная точка входа
 
 ### Android (`app/src/main/java/com/example/pccontrol/`)
 - `Theme.kt` — тёмная кибер-палитра (Midnight Navy + Electric Cyan)
@@ -59,12 +43,7 @@ APK собирает GitHub Actions (вкладка Actions → «Build APK» �
 
 ## Тестирование
 
-Запуск тестов сервера:
-```bash
-python -m unittest discover tests
-```
-
-Запуск тестов Android:
+Тесты сервера — в репозитории PhoneV2-server. Тесты Android:
 ```bash
 gradle test
 ```

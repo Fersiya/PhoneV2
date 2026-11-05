@@ -20,12 +20,4 @@ local.properties
 .idea/
 *.iml
 
-# Server lives on the PC, not in this repo
-server.py
-install_autostart.bat
 config.json
-
-# Signing keys (never commit)
-*.keystore
-*.jks
-keystore*.txt
