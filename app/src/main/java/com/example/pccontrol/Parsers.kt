@@ -113,3 +113,15 @@ fun parseOpenWindows(json: String): List<WindowItem> {
         )
     }
 }
+
+/** Домашний адрес: IPv4 (с портом или без), например 192.168.0.10 или 192.168.0.10:8765. */
+fun isLanAddress(h: String): Boolean {
+    val t = h.trim().removePrefix("http://").removeSuffix("/")
+    return t.isNotEmpty() && t.all { it.isDigit() || it == '.' || it == ':' } && t.contains('.')
+}
+
+/** Адрес вне дома: ссылка https или доменное имя (trycloudflare.com и т.п.). */
+fun isRemoteAddress(h: String): Boolean {
+    val t = h.trim()
+    return t.isNotEmpty() && !isLanAddress(t) && (t.startsWith("https://") || t.contains("."))
+}

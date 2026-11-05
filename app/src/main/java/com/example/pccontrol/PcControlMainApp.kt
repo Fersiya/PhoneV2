@@ -203,6 +203,15 @@ fun PcControlMainApp(
 
     var host by remember { mutableStateOf(initialActiveProfile?.host ?: prefs.getString("host", "") ?: "") }
     var token by remember { mutableStateOf(initialActiveProfile?.token ?: prefs.getString("token", "") ?: "") }
+    // Два режима подключения: дома (IP в Wi-Fi) и вне дома (Cloudflare-адрес); host — то, что выбрано сейчас
+    var lanHost by remember {
+        mutableStateOf(prefs.getString("lan_host_$initialActiveId", null) ?: (initialActiveProfile?.host ?: "").takeIf { isLanAddress(it) } ?: "")
+    }
+    var remoteHost by remember {
+        mutableStateOf(prefs.getString("remote_host_$initialActiveId", null) ?: (initialActiveProfile?.host ?: "").takeIf { isRemoteAddress(it) } ?: "")
+    }
+    var connMode by remember { mutableStateOf(prefs.getString("conn_mode", "auto") ?: "auto") }
+    var routeLabel by remember { mutableStateOf("") }
     var mac by remember { mutableStateOf(initialActiveProfile?.mac ?: prefs.getString("mac", "") ?: "") }
     val installedApkHash by remember { mutableStateOf(prefs.getString("installed_apk_hash", "") ?: "") }
     var mouseSensitivity by remember { mutableFloatStateOf(prefs.getFloat("mouse_sens", 1.6f)) }
@@ -312,6 +321,9 @@ fun PcControlMainApp(
             .putString("host", host.trim())
             .putString("token", token.trim())
             .putString("mac", mac.trim())
+            .putString("lan_host_$activeProfileId", lanHost.trim())
+            .putString("remote_host_$activeProfileId", remoteHost.trim())
+            .putString("conn_mode", connMode)
             .putString("active_profile_id", activeProfileId)
             .putFloat("mouse_sens", mouseSensitivity)
             .apply()
@@ -604,6 +616,59 @@ fun PcControlMainApp(
         }
     }
 
+    suspend fun pingOk(h: String, ms: Int): Boolean = try {
+        h.isNotBlank() && http(h.trim(), token.trim(), "/ping", "GET", timeoutMs = ms).code == 200
+    } catch (_: Exception) {
+        false
+    }
+
+    // Свежий интернет-адрес ПК из облачного канала (его туда кладёт сервер при запуске туннеля)
+    suspend fun fetchRemoteFromCloud(): String = withContext(Dispatchers.IO) {
+        if (token.isBlank()) return@withContext ""
+        try {
+            val hashBytes = java.security.MessageDigest.getInstance("SHA-256").digest(token.trim().toByteArray(Charsets.UTF_8))
+            val channelId = "pcremote_" + hashBytes.joinToString("") { "%02x".format(it) }.take(16)
+            val conn = URL("https://ntfy.sh/$channelId/raw?poll=1").openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            if (conn.responseCode != 200) return@withContext ""
+            val raw = conn.inputStream.bufferedReader().use { it.readText() }
+            raw.lines().lastOrNull { it.startsWith("https://") }?.trim() ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    // Выбор маршрута: сначала домашний адрес, если ПК не отвечает — интернет-адрес (Cloudflare)
+    suspend fun resolveRoute() {
+        if (token.isBlank()) return
+        val lan = lanHost.trim()
+        var rem = remoteHost.trim()
+        val before = host
+        if (connMode != "remote" && lan.isNotBlank() && pingOk(lan, 1000)) {
+            host = lan
+            routeLabel = "🏠 Дома (Wi-Fi)"
+        } else if (connMode != "lan") {
+            if (rem.isBlank() || !pingOk(rem, 4000)) {
+                val fresh = fetchRemoteFromCloud()
+                if (fresh.isNotBlank()) {
+                    rem = fresh
+                    remoteHost = fresh
+                }
+            }
+            if (rem.isNotBlank()) {
+                host = rem
+                routeLabel = "🌐 Через интернет"
+            } else {
+                routeLabel = "⚠️ Адрес вне дома не задан"
+            }
+        } else {
+            if (lan.isNotBlank()) host = lan
+            routeLabel = "⚠️ ПК не отвечает в Wi-Fi"
+        }
+        if (host != before) save()
+    }
+
     fun fetchLatestTunnelUrl() {
         if (token.isBlank()) {
             status = "Сначала укажите токен в настройках"
@@ -623,10 +688,10 @@ fun PcControlMainApp(
                     val latestUrl = raw.lines().lastOrNull { it.isNotBlank() && (it.startsWith("https://") || it.startsWith("http://")) }?.trim() ?: ""
                     if (latestUrl.startsWith("https://") || latestUrl.startsWith("http://")) {
                         withContext(Dispatchers.Main) {
-                            host = latestUrl
+                            remoteHost = latestUrl
                             save()
-                            status = "Адрес ПК обновлен: $latestUrl ✔"
-                            scope.launch { refresh() }
+                            status = "Интернет-адрес ПК обновлён: $latestUrl ✔"
+                            scope.launch { resolveRoute(); refresh() }
                         }
                     } else {
                         withContext(Dispatchers.Main) { status = "ПК пока не передал интернет-адрес" }
@@ -665,6 +730,7 @@ fun PcControlMainApp(
                     val pairRes = pairWithPc(foundHost)
                     withContext(Dispatchers.Main) {
                         host = foundHost
+                        lanHost = foundHost
                         if (pairRes.success && pairRes.token.isNotBlank()) {
                             token = pairRes.token
                             tokenError = false
@@ -1065,6 +1131,16 @@ fun PcControlMainApp(
                 downloadedFiles = downloadedFiles + (entry.name to savedUri!!)
             }
             status = res
+        }
+    }
+
+    LaunchedEffect(connMode, lanHost, remoteHost, token, activeProfileId) {
+        activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            delay(500L)
+            while (true) {
+                resolveRoute()
+                delay(if (pcOnline == true) 20000L else 6000L)
+            }
         }
     }
 
@@ -2160,6 +2236,8 @@ fun PcControlMainApp(
                                         host = prof.host
                                         token = prof.token
                                         mac = prof.mac
+                                        lanHost = prefs.getString("lan_host_${prof.id}", null) ?: prof.host.takeIf { isLanAddress(it) } ?: ""
+                                        remoteHost = prefs.getString("remote_host_${prof.id}", null) ?: prof.host.takeIf { isRemoteAddress(it) } ?: ""
                                         save()
                                         status = "Выбран профиль: ${prof.name}"
                                         scope.launch { refresh() }
@@ -2175,10 +2253,30 @@ fun PcControlMainApp(
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Настройки подключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("auto" to "🔄 Авто", "lan" to "🏠 Дома", "remote" to "🌐 Вне дома").forEach { (mode, title) ->
+                                FilterChip(
+                                    selected = connMode == mode,
+                                    onClick = { connMode = mode; save() },
+                                    label = { Text(title) }
+                                )
+                            }
+                        }
+                        if (routeLabel.isNotBlank()) {
+                            Text("Сейчас: $routeLabel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
                         OutlinedTextField(
-                            value = host,
-                            onValueChange = { host = it },
-                            label = { Text("Адрес ПК (IP или Cloudflare адрес)") },
+                            value = lanHost,
+                            onValueChange = { lanHost = it },
+                            label = { Text("Адрес дома (IP ПК в Wi-Fi)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = remoteHost,
+                            onValueChange = { remoteHost = it },
+                            label = { Text("Адрес вне дома (Cloudflare)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -2378,7 +2476,7 @@ fun PcControlMainApp(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Автозагрузка новых фото 📸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text(
-                                    "Свежие снимки с камеры автоматически сохраняются в D:\\Photos на ПК через Tailscale",
+                                    "Свежие снимки с камеры автоматически сохраняются в D:\\Photos на ПК по сети",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2449,7 +2547,7 @@ fun PcControlMainApp(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Поиск ПК в домашней сети", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("Автоопределение IP и токена без Tailscale и ввода цифр", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Автоопределение IP и токена без ввода цифр", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         Button(

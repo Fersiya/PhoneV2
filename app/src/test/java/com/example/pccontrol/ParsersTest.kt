@@ -89,4 +89,15 @@ class ParsersTest {
         assertTrue(windows[0].active)
         assertFalse(windows[0].minimized)
     }
+
+    @Test
+    fun testAddressKinds() {
+        assertTrue(isLanAddress("192.168.0.10"))
+        assertTrue(isLanAddress("192.168.0.10:8765"))
+        assertFalse(isLanAddress("https://abc.trycloudflare.com"))
+        assertTrue(isRemoteAddress("https://abc.trycloudflare.com"))
+        assertTrue(isRemoteAddress("abc.trycloudflare.com"))
+        assertFalse(isRemoteAddress("192.168.0.10"))
+        assertFalse(isRemoteAddress(""))
+    }
 }
