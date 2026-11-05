@@ -8,6 +8,9 @@ import android.content.Intent
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Build
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.os.VibrationEffect
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
@@ -123,6 +126,55 @@ fun PcControlMainApp(
     val activity = context as ComponentActivity
     val prefs = remember { context.getSharedPreferences("pc_control", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
+
+    val vibrator = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vm?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
+
+    fun triggerHapticClick() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(20L)
+            }
+        } catch (_: Exception) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
+    fun triggerHapticTick() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(10L)
+            }
+        } catch (_: Exception) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
+    fun triggerHapticHeavy() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(40L)
+            }
+        } catch (_: Exception) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
 
     val initialProfiles = remember {
         val raw = prefs.getString("saved_profiles_json", "") ?: ""
@@ -335,6 +387,7 @@ fun PcControlMainApp(
     }
 
     fun run(path: String, method: String = "POST", bodyText: String? = null, refreshAfter: Boolean = true) {
+        triggerHapticClick()
         save()
         status = "Отправляю…"
         scope.launch {
@@ -364,6 +417,7 @@ fun PcControlMainApp(
 
     fun sendAbsMouse(nx: Float, ny: Float, click: Boolean = false) {
         if (host.isBlank() || token.isBlank()) return
+        if (click) triggerHapticClick()
         val nxStr = String.format(Locale.US, "%.4f", nx)
         val nyStr = String.format(Locale.US, "%.4f", ny)
         val isTunnel = host.contains("trycloudflare.com") || host.startsWith("https://")
@@ -416,6 +470,7 @@ fun PcControlMainApp(
 
     fun sendGamepadKey(vk: Int, down: Boolean) {
         if (host.isBlank() || token.isBlank()) return
+        if (down) triggerHapticClick()
         val cmd = if (down) "kd" else "ku"
         val packetData = "$token:$cmd:$vk".toByteArray(Charsets.UTF_8)
         scope.launch(Dispatchers.IO) {
@@ -666,6 +721,55 @@ fun PcControlMainApp(
 
     fun sendMouseAction(action: String, dy: Int = 0, nx: Float? = null, ny: Float? = null) {
         if (host.isBlank() || token.isBlank()) return
+        if (action == "scroll") {
+            triggerHapticTick()
+        } else {
+            triggerHapticClick()
+        }
+
+        val isTunnel = host.contains("trycloudflare.com") || host.startsWith("https://")
+        if (!isTunnel) {
+            val udpPacketStr = when (action) {
+                "left", "right", "middle", "double" -> "$token:act:$action"
+                "scroll" -> if (dy != 0) "$token:scroll:$dy" else null
+                "abs_click" -> if (nx != null && ny != null) {
+                    val nxStr = String.format(Locale.US, "%.4f", nx)
+                    val nyStr = String.format(Locale.US, "%.4f", ny)
+                    "$token:tap:$nxStr,$nyStr"
+                } else null
+                else -> null
+            }
+
+            if (udpPacketStr != null) {
+                val packetData = udpPacketStr.toByteArray(Charsets.UTF_8)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        if (cachedUdpHost != host.trim() || cachedUdpIp == null) {
+                            cachedUdpIp = InetAddress.getByName(host.trim())
+                            cachedUdpHost = host.trim()
+                        }
+                        val addr = cachedUdpIp ?: return@launch
+                        val sock = udpMouseSocket ?: return@launch
+                        val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
+                        sock.send(packet)
+                        return@launch
+                    } catch (_: Exception) {
+                    }
+                    val payload = JSONObject().apply {
+                        put("action", action)
+                        if (dy != 0) put("dy", dy)
+                        if (nx != null) put("nx", String.format(Locale.US, "%.4f", nx).toDouble())
+                        if (ny != null) put("ny", String.format(Locale.US, "%.4f", ny).toDouble())
+                        if (streamAllMonitors) put("allMonitors", true)
+                    }.toString()
+                    try {
+                        http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 800)
+                    } catch (_: Exception) {}
+                }
+                return
+            }
+        }
+
         val payload = JSONObject().apply {
             put("action", action)
             if (dy != 0) put("dy", dy)
@@ -676,8 +780,7 @@ fun PcControlMainApp(
         scope.launch {
             try {
                 http(host.trim(), token.trim(), "/mouse", "POST", payload, timeoutMs = 1000)
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
     }
 
