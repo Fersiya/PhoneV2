@@ -1311,7 +1311,7 @@ fun PcControlMainApp(
                                 CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") { directTapMode = !directTapMode }
                             }
 
-                            val currentBmp = screenBitmap
+                            StreamFrameHost(bitmapProvider = { screenBitmap }) { currentBmp ->
                             val aspect = if (currentBmp != null && currentBmp.height > 0) {
                                 (currentBmp.width.toFloat() / currentBmp.height.toFloat()).coerceIn(0.5f, 4.0f)
                             } else {
@@ -1403,6 +1403,7 @@ fun PcControlMainApp(
                                         )
                                     }
                                 }
+                            }
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2412,7 +2413,7 @@ fun PcControlMainApp(
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            val currentBmp = screenBitmap
+            StreamFrameHostBox(bitmapProvider = { screenBitmap }) { currentBmp ->
             if (currentBmp != null) {
                 Image(
                     bitmap = currentBmp,
@@ -2526,6 +2527,7 @@ fun PcControlMainApp(
             } else {
                 Text("Ожидание видеопотока…", color = Color.White, modifier = Modifier.align(Alignment.Center))
             }
+            }
 
             if (showStreamFpsOverlay) {
                 Box(
@@ -2541,12 +2543,7 @@ fun PcControlMainApp(
                             prefs.edit().putBoolean("show_stream_fps_overlay", false).apply()
                         }
                 ) {
-                    Text(
-                        text = "🟢 ${liveStreamFps} FPS • ${liveStreamPing} мс",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF00E5FF)
-                    )
+                    StreamStatsText({ liveStreamFps }, { liveStreamPing }, 12.sp)
                 }
             }
 

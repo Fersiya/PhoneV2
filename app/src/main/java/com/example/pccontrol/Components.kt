@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -173,4 +175,30 @@ fun RowScope.HoldScrollButton(
             Text(text, textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Medium)
         }
     }
+}
+
+/**
+ * Кадр стрима читается ЗДЕСЬ, а не в главном экране: каждый новый кадр перерисовывает только этот блок,
+ * а не весь PcControlMainApp (раньше при 60-90 FPS пересобирался весь экран).
+ */
+@Composable
+fun StreamFrameHost(bitmapProvider: () -> ImageBitmap?, content: @Composable (ImageBitmap?) -> Unit) {
+    content(bitmapProvider())
+}
+
+/** То же для полноэкранного режима: внутри доступен BoxScope (align и т.п.). */
+@Composable
+fun BoxScope.StreamFrameHostBox(bitmapProvider: () -> ImageBitmap?, content: @Composable BoxScope.(ImageBitmap?) -> Unit) {
+    content(bitmapProvider())
+}
+
+/** Счётчик FPS/пинга: значения читаются внутри, поэтому он не заставляет перерисовываться родителя. */
+@Composable
+fun StreamStatsText(fpsProvider: () -> Int, pingProvider: () -> Long, fontSize: androidx.compose.ui.unit.TextUnit) {
+    Text(
+        text = "🟢 ${fpsProvider()} FPS • ${pingProvider()} мс",
+        fontSize = fontSize,
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF00E5FF)
+    )
 }
