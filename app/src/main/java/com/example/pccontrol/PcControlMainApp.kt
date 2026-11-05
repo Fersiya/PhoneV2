@@ -49,8 +49,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -2015,7 +2013,7 @@ fun PcControlMainApp(
                             Text("Накопители:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 disks.forEach { disk ->
-                                    val usedPct = if (disk.totalGb > 0) ((disk.totalGb - disk.freeGb).toFloat() / disk.totalGb).coerceIn(0f, 1f) else 0f
+                                    val usedPct = if (disk.totalGb > 0) ((disk.totalGb - disk.freeGb) / disk.totalGb).toFloat().coerceIn(0f, 1f) else 0f
                                     OutlinedCard(shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
                                         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
