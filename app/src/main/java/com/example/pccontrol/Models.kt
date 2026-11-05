@@ -10,7 +10,6 @@ val KeyPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp)
 
 enum class NavTab(val title: String, val icon: String) {
     SCREEN("Экран", "🖥️"),
-    GAME("Геймпад", "🎮"),
     MEDIA("Медиа", "🎵"),
     APPS("Окна/Софт", "🪟"),
     POWER("Питание", "⚡"),

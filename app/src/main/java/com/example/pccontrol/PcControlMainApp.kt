@@ -329,6 +329,7 @@ fun PcControlMainApp(
     }
 
     fun wake() {
+        triggerHapticHeavy()
         save()
         status = "Отправляю сигнал WoL…"
         scope.launch { status = sendMagicPacket(mac) }
@@ -468,24 +469,6 @@ fun PcControlMainApp(
         }
     }
 
-    fun sendGamepadKey(vk: Int, down: Boolean) {
-        if (host.isBlank() || token.isBlank()) return
-        if (down) triggerHapticClick()
-        val cmd = if (down) "kd" else "ku"
-        val packetData = "$token:$cmd:$vk".toByteArray(Charsets.UTF_8)
-        scope.launch(Dispatchers.IO) {
-            try {
-                if (cachedUdpHost != host.trim() || cachedUdpIp == null) {
-                    cachedUdpIp = InetAddress.getByName(host.trim())
-                    cachedUdpHost = host.trim()
-                }
-                val addr = cachedUdpIp ?: return@launch
-                val sock = udpMouseSocket ?: return@launch
-                val packet = DatagramPacket(packetData, packetData.size, addr, PORT)
-                sock.send(packet)
-            } catch (_: Exception) {}
-        }
-    }
 
     fun captureScreenshotToPhone() {
         if (host.isBlank() || token.isBlank()) return
@@ -1642,113 +1625,7 @@ fun PcControlMainApp(
                 }
             }
 
-            // ==================== 2. ГЕЙМПАД ДЛЯ ПК ====================
-            if (currentTab == NavTab.GAME) {
-                OutlinedCard(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "Виртуальный геймпад (Remote Play)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF10B981).copy(alpha = 0.2f)
-                            ) {
-                                Text(
-                                    "UDP ⚡ Мгновенно",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF10B981),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-
-                        Text(
-                            "Управляйте играми и презентациями без задержки. D-Pad (WASD), кнопки действий, триггеры и системные клавиши.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            GamepadKeyButton("LB", "Shift", 0x10, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("ESC", "Пауза", 0x1B, Color(0xFFF43F5E), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("ENTER", "Выбор", 0x0D, Color(0xFF10B981), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("RB", "Ctrl", 0x11, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text("Крестовина (WASD)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
-                                GamepadKeyButton("▲", "W", 0x57, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    GamepadKeyButton("◀", "A", 0x41, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                    GamepadKeyButton("▼", "S", 0x53, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                    GamepadKeyButton("▶", "D", 0x44, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                }
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .height(130.dp)
-                                    .background(Color.White.copy(alpha = 0.1f))
-                            )
-
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text("Действия", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
-                                GamepadKeyButton("Y", "F", 0x46, Color(0xFFFBBF24), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    GamepadKeyButton("X", "R / Перезарядка", 0x52, Color(0xFF38BDF8), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                    GamepadKeyButton("B", "E / Использовать", 0x45, Color(0xFFF43F5E), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                                }
-                                GamepadKeyButton("A", "Прыжок (Space)", 0x20, Color(0xFF10B981), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            }
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            GamepadKeyButton("←", "Left", 0x25, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("↑", "Up", 0x26, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("↓", "Down", 0x28, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("→", "Right", 0x27, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            GamepadKeyButton("Tab", "Инвентарь", 0x09, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("M", "Карта", 0x4D, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), { vk, down -> sendGamepadKey(vk, down) })
-                            GamepadKeyButton("I", "Снаряжение", 0x49, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), { vk, down -> sendGamepadKey(vk, down) })
-                        }
-                    }
-                }
-            }
-
-            // ==================== 3. МЕДИА И YOUTUBE ====================
+            // ==================== 2. МЕДИА И YOUTUBE ====================
             if (currentTab == NavTab.MEDIA) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

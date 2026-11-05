@@ -38,65 +38,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-@Composable
-fun GamepadKeyButton(
-    label: String,
-    subLabel: String = "",
-    vk: Int,
-    accentColor: Color = Color(0xFF00E5FF),
-    modifier: Modifier = Modifier,
-    onKey: (Int, Boolean) -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    var isPressed by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (isPressed) accentColor.copy(alpha = 0.45f)
-                else accentColor.copy(alpha = 0.12f)
-            )
-            .border(
-                width = if (isPressed) 2.dp else 1.dp,
-                color = if (isPressed) accentColor else accentColor.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .pointerInput(vk) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onKey(vk, true)
-                        tryAwaitRelease()
-                        isPressed = false
-                        onKey(vk, false)
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (isPressed) Color.White else accentColor
-            )
-            if (subLabel.isNotBlank()) {
-                Text(
-                    text = subLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun RowScope.CoolButton(
