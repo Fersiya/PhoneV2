@@ -14,7 +14,7 @@ android {
         targetSdk = 35
         // В CI версия растёт сама (номер запуска), локально остаётся 33
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 100 + it } ?: 33
-        versionName = "5.1"
+        versionName = "6.0"
     }
 
     signingConfigs {
@@ -68,4 +68,5 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    testImplementation("junit:junit:4.13.2")
 }

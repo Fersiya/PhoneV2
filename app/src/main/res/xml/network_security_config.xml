@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Разрешаем чистый HTTP для локальной сети и Tailscale -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+    <!-- Запрещаем незашифрованный HTTP для облачных сервисов и туннелей -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">trycloudflare.com</domain>
+        <domain includeSubdomains="true">ntfy.sh</domain>
+        <domain includeSubdomains="true">cloudflare.com</domain>
+    </domain-config>
+</network-security-config>

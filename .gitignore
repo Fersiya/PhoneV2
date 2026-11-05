@@ -1,12 +1,16 @@
 # Server private data and binaries
 config.json
 server.log*
+tunnel_url.txt
 updates/
 photos/
 *.apk
 *.part
 __pycache__/
 *.pyc
+
+# Security & Keys
+debug.keystore
 
 # Android build and IDE
 .gradle/
