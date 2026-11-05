@@ -239,7 +239,7 @@ def _cloudflared_worker() -> None:
                             log(f"[Cloudflare Tunnel] Не удалось опубликовать ссылку: {e}")
                         print("\n" + "=" * 70)
                         log(f"[Cloudflare Tunnel] Внешний интернет-адрес: {found_url}")
-                        print("  🌐 ВНЕШНИЙ ИНТЕРНЕТ-ТУННЕЛЬ АКТИВЕН (Cloudflare Tunnel):")
+                        print("  [*] ВНЕШНИЙ ИНТЕРНЕТ-ТУННЕЛЬ АКТИВЕН (Cloudflare Tunnel):")
                         print("  Адрес для телефона (4G/5G / Вне дома):")
                         print(f"  -> {found_url}")
                         print("  Вставьте этот адрес в приложении на смартфоне в поле 'Адрес ПК'.")

@@ -10,6 +10,17 @@
 В скрытом режиме ошибки и действия пишутся в server.log рядом с этим файлом.
 """
 import sys
+
+# Обеспечиваем корректный вывод UTF-8 в Windows-консоли (защита от UnicodeEncodeError на cp1251)
+if sys.platform == "win32":
+    try:
+        if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from server import (
     PORT,
     TOKEN,
@@ -33,10 +44,10 @@ def main() -> None:
     check_paths()
     local_ips = ", ".join(get_local_ips()) or "127.0.0.1"
     print("\n" + "=" * 70)
-    print("  🖥️  ПУЛЬТ ПК v6.0 — СЕРВЕР ЗАПУЩЕН И ГОТОВ К РАБОТЕ")
+    print("  [*] ПУЛЬТ ПК v6.0 — СЕРВЕР ЗАПУЩЕН И ГОТОВ К РАБОТЕ")
     print("=" * 70)
-    print(f"  🔑 СЕКРЕТНЫЙ ТОКЕН:  {TOKEN}")
-    print(f"  🏠 ЛОКАЛЬНЫЙ WI-FI:   http://{local_ips}:{PORT}")
+    print(f"  [+] СЕКРЕТНЫЙ ТОКЕН:  {TOKEN}")
+    print(f"  [+] ЛОКАЛЬНЫЙ WI-FI:   http://{local_ips}:{PORT}")
     print("=" * 70 + "\n")
     log(f"Сервер слушает порт {PORT}. Токен: {TOKEN}")
 

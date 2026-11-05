@@ -186,7 +186,7 @@ def handle_media_upload(headers, rfile) -> Tuple[int, str, Dict[str, Any]]:
 
         file_size = os.path.getsize(dest_path)
         size_mb = round(file_size / (1024 * 1024), 2)
-        log(f"📥 Новое фото сохранено на ПК: {os.path.basename(dest_path)} ({size_mb} МБ)")
+        log(f"[+] Новое фото сохранено на ПК: {os.path.basename(dest_path)} ({size_mb} МБ)")
         return 200, "ok", {
             "status": "ok",
             "filename": os.path.basename(dest_path),
