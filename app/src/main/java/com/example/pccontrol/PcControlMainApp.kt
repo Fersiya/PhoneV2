@@ -612,6 +612,34 @@ fun PcControlMainApp(
                     sb.appendLine("   Попробуйте подключить телефон к домашнему Wi-Fi и нажать 'Найти ПК в Wi-Fi'.")
                 }
             }
+            // Проверка обоих маршрутов и подсказки по сети
+            sb.appendLine()
+            sb.appendLine("=== МАРШРУТЫ ===")
+            try {
+                val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+                val wifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                val vpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+                sb.appendLine("• Сеть телефона: ${if (wifi) "Wi-Fi" else "мобильный интернет"}${if (vpn) " + включён VPN" else ""}")
+                if (!wifi && connMode == "lan") sb.appendLine("💡 Выбран режим «Дома», а Wi-Fi нет — переключите на «Авто».")
+                if (vpn) sb.appendLine("💡 VPN может не пускать к домашней сети и к trycloudflare.com — попробуйте выключить его.")
+            } catch (_: Exception) {
+            }
+            for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🌐 Вне дома" to remoteHost.trim())) {
+                if (addr.isBlank()) {
+                    sb.appendLine("$name: адрес не задан")
+                    continue
+                }
+                val t1 = System.currentTimeMillis()
+                val res = try {
+                    val r = http(addr, token.trim(), "/ping", "GET", timeoutMs = 4000)
+                    val note = if (r.code == 200) " ✅" else if (r.code in intArrayOf(502, 530, 1033, 404)) " ❌ туннель на ПК не запущен или адрес устарел" else ""
+                    "HTTP ${r.code}$note"
+                } catch (e: Exception) {
+                    "❌ нет связи (${e.localizedMessage ?: e.javaClass.simpleName})"
+                }
+                sb.appendLine("$name: $res, ${System.currentTimeMillis() - t1} мс")
+            }
             withContext(Dispatchers.Main) {
                 isDiagnosing = false
                 diagnosticsReport = sb.toString()
