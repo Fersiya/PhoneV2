@@ -19,7 +19,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "3.3"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "6.0"
     } catch (_: Exception) {
         "0.0"
     }
@@ -80,7 +80,8 @@ fun parseStatusSnapshot(json: String): PcStatusSnapshot {
         disks = diskList,
         shutdownRemainingSec = remSec,
         shutdownActive = active,
-        volume = root.optInt("volume", -1)
+        volume = root.optInt("volume", -1),
+        tunnelUrl = root.optString("tunnelUrl", "")
     )
 }
 

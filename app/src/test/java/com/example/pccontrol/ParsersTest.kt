@@ -39,6 +39,7 @@ class ParsersTest {
         assertEquals(70, snapshot.volume)
         assertEquals(1, snapshot.disks.size)
         assertEquals("C:", snapshot.disks[0].drive)
+        assertEquals("", snapshot.tunnelUrl)
     }
 
     @Test

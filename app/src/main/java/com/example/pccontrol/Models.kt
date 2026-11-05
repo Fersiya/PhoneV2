@@ -33,7 +33,8 @@ data class PcStatusSnapshot(
     val disks: List<DiskItem> = emptyList(),
     val shutdownRemainingSec: Int,
     val shutdownActive: Boolean,
-    val volume: Int = -1
+    val volume: Int = -1,
+    val tunnelUrl: String = ""
 )
 
 data class FileEntry(val name: String, val isDir: Boolean, val size: Long, val mtime: Long)

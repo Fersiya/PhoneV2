@@ -2216,7 +2216,7 @@ fun PcControlMainApp(
 
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val activeTunnelUrl = statusSnapshot?.tunnelUrl?.takeIf { it.isNotBlank() } ?: currentTunnelUrl
+                        val activeTunnelUrl = currentTunnelUrl
                         val isRunning = activeTunnelUrl.isNotBlank() || isTunnelRunning
 
                         Row(
