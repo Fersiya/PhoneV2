@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore: ["**.md", "server.py", "*.bat", "*.vbs"]
   workflow_dispatch:
 
 jobs:
@@ -20,10 +21,32 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
+      - name: Подготовить свой ключ подписи (если секреты заданы)
+        env:
+          KS_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "HAVE_KEY=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build release APK (со своим ключом)
+        if: env.HAVE_KEY == '1'
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Build debug APK (если ключ не настроен)
+        if: env.HAVE_KEY != '1'
         run: gradle assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
           name: pc-control-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

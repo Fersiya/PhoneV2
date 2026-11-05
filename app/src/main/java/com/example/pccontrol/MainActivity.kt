@@ -2281,7 +2281,7 @@ fun PcControlMainApp(
                                 CoolButton("ПКМ") { sendMouseAction("right") }
                                 HoldScrollButton("⬆ Скролл") { sendMouseAction("scroll", dy = 3) }
                                 HoldScrollButton("⬇ Скролл") { sendMouseAction("scroll", dy = -3) }
-                                CoolButton("Alt+Tab") { run("/media/alt_tab", refreshAfter = true) }
+                                CoolButton("📸 Скриншот", accentColor = Color(0xFF10B981)) { captureScreenshotToPhone() }
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 CoolButton(if (isFullscreenStream) "✕ Выйти из полного экрана" else "⛶ Во весь экран", filled = true, accentColor = Color(0xFF0284C7)) {
@@ -2404,6 +2404,119 @@ fun PcControlMainApp(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("📋 Буфер → ПК") { sendPhoneClipboardToPc() }
                             CoolButton("📥 Буфер ← ПК") { fetchPcClipboardToPhone() }
+                        }
+                    }
+                }
+            }
+
+            
+            // ==================== 1.1 ГЕЙМПАД ДЛЯ ПК (REMOTE PLAY) ====================
+            if (currentTab == NavTab.GAME) {
+                OutlinedCard(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "Виртуальный геймпад (Remote Play)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    "UDP ⚡ Мгновенно",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF10B981),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Text(
+                            "Управляйте играми и презентациями без задержки. D-Pad (WASD), кнопки действий, триггеры и системные клавиши.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // Верхние триггеры (Bumpers) & Меню (Esc / Enter)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GamepadKeyButton("LB", "Shift", 0x10, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
+                            GamepadKeyButton("ESC", "Пауза", 0x1B, Color(0xFFF43F5E), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
+                            GamepadKeyButton("ENTER", "Выбор", 0x0D, Color(0xFF10B981), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
+                            GamepadKeyButton("RB", "Ctrl", 0x11, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
+                        }
+
+                        // Основная секция: D-Pad слева, Action diamond справа
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // D-Pad (W, A, S, D)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Крестовина (WASD)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
+                                GamepadKeyButton("▲", "W", 0x57, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    GamepadKeyButton("◀", "A", 0x41, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
+                                    GamepadKeyButton("▼", "S", 0x53, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
+                                    GamepadKeyButton("▶", "D", 0x44, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
+                                }
+                            }
+
+                            // Разделитель
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(130.dp)
+                                    .background(Color.White.copy(alpha = 0.1f))
+                            )
+
+                            // Action Diamond (Y, X, B, A)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Действия", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
+                                GamepadKeyButton("Y", "F", 0x46, Color(0xFFFBBF24), Modifier.size(54.dp), ::sendGamepadKey)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    GamepadKeyButton("X", "R / Перезарядка", 0x52, Color(0xFF38BDF8), Modifier.size(54.dp), ::sendGamepadKey)
+                                    GamepadKeyButton("B", "E / Использовать", 0x45, Color(0xFFF43F5E), Modifier.size(54.dp), ::sendGamepadKey)
+                                }
+                                GamepadKeyButton("A", "Прыжок (Space)", 0x20, Color(0xFF10B981), Modifier.size(54.dp), ::sendGamepadKey)
+                            }
+                        }
+
+                        // Стрелки курсора и быстрые игровые функции
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            GamepadKeyButton("←", "Left", 0x25, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
+                            GamepadKeyButton("↑", "Up", 0x26, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
+                            GamepadKeyButton("↓", "Down", 0x28, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
+                            GamepadKeyButton("→", "Right", 0x27, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            GamepadKeyButton("Tab", "Инвентарь", 0x09, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), ::sendGamepadKey)
+                            GamepadKeyButton("M", "Карта", 0x4D, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), ::sendGamepadKey)
+                            GamepadKeyButton("I", "Снаряжение", 0x49, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), ::sendGamepadKey)
                         }
                     }
                 }
@@ -3400,5 +3513,67 @@ fun PcControlMainApp(
         )
     }
 
+
+
+
+@Composable
+private fun GamepadKeyButton(
+    label: String,
+    subLabel: String = "",
+    vk: Int,
+    accentColor: Color = Color(0xFF00E5FF),
+    modifier: Modifier = Modifier,
+    onKey: (Int, Boolean) -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var isPressed by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (isPressed) accentColor.copy(alpha = 0.45f)
+                else accentColor.copy(alpha = 0.12f)
+            )
+            .border(
+                width = if (isPressed) 2.dp else 1.dp,
+                color = if (isPressed) accentColor else accentColor.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .pointerInput(vk) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onKey(vk, true)
+                        tryAwaitRelease()
+                        isPressed = false
+                        onKey(vk, false)
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isPressed) Color.White else accentColor
+            )
+            if (subLabel.isNotBlank()) {
+                Text(
+                    text = subLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
 
 }

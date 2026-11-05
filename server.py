@@ -1341,7 +1341,11 @@ def launch_app(app: dict):
     args = [os.path.expandvars(a) for a in app["launch"]]
     exe = args[0]
     if not os.path.exists(exe):
-        return 404, f"не найден файл: {exe}"
+        found = shutil.which(exe)
+        if not found:
+            return 404, f"не найден файл: {exe}"
+        exe = found
+        args[0] = found
     workdir = os.path.dirname(exe) or None
     try:
         subprocess.Popen(args, cwd=workdir, creationflags=DETACHED_FLAGS)
@@ -1617,22 +1621,53 @@ def run_power(cmd: list, timer_sec) -> None:
         log(f"[!] Не удалось выполнить команду питания: {e}")
 
 
+MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", ".dng",
+              ".mp4", ".mov", ".mkv", ".3gp", ".avi", ".webm"}
+MEDIA_MAX_BYTES = 8 << 30
+_auth_lock = threading.Lock()
+_auth_fails: dict = {}  # ip -> (число ошибок, блок до, начало окна)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    timeout = 60
+
+    def _client_ip(self) -> str:
+        ip = self.client_address[0]
+        if ip in ("127.0.0.1", "::1"):  # запрос пришёл через локальный cloudflared
+            return self.headers.get("CF-Connecting-IP", ip)
+        return ip
+
     def _authorized(self) -> bool:
+        ip = self._client_ip()
+        now = time.time()
+        with _auth_lock:
+            rec = _auth_fails.get(ip)
+            if rec and rec[1] > now:
+                return False
+        ok = self._check_token()
+        with _auth_lock:
+            if ok:
+                _auth_fails.pop(ip, None)
+            else:
+                cnt, _until, first = _auth_fails.get(ip, (0, 0.0, now))
+                if now - first > 600:
+                    cnt, first = 0, now
+                cnt += 1
+                until = now + 900 if cnt >= 10 else 0.0
+                _auth_fails[ip] = (cnt, until, first)
+                if cnt == 10:
+                    log(f"[!] {ip}: 10 неверных токенов, блокировка на 15 минут")
+        return ok
+
+    def _check_token(self) -> bool:
         reload_config_if_needed()
         given = self.headers.get("X-Token", "")
         if not given:
             auth_hdr = self.headers.get("Authorization", "")
             if auth_hdr.lower().startswith("bearer "):
                 given = auth_hdr[7:].strip()
-        if not given:
-            try:
-                qs = parse_qs(urlparse(self.path).query)
-                given = qs.get("token", [""])[0] or qs.get("t", [""])[0]
-            except Exception:
-                pass
         return bool(given and hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8")))
 
     def _reply(self, code: int, text: str, content_type: str = "text/plain") -> None:
@@ -1915,7 +1950,17 @@ class Handler(BaseHTTPRequestHandler):
             if not clean_name:
                 clean_name = f"photo_{int(time.time())}.jpg"
 
+            ext_ok = os.path.splitext(clean_name)[1].lower() in MEDIA_EXTS
+            try:
+                declared = int(self.headers.get("Content-Length", 0) or 0)
+            except ValueError:
+                declared = 0
             os.makedirs(MEDIA_DIR, exist_ok=True)
+            if not ext_ok or declared > MEDIA_MAX_BYTES or (
+                declared and shutil.disk_usage(MEDIA_DIR).free < declared + (1 << 30)
+            ):
+                self.close_connection = True
+                return self._reply(413 if ext_ok else 415, "файл не принят: тип, размер или нет места")
             dest_path = os.path.join(MEDIA_DIR, clean_name)
             base_part, ext_part = os.path.splitext(clean_name)
             counter = 1
@@ -1948,6 +1993,8 @@ class Handler(BaseHTTPRequestHandler):
                             if chunk_len == 0:
                                 self.rfile.readline()
                                 break
+                            if chunk_len > (64 << 20) or bytes_received + chunk_len > MEDIA_MAX_BYTES:
+                                raise ValueError("слишком большой блок")
                             data = self.rfile.read(chunk_len)
                             out_f.write(data)
                             bytes_received += len(data)
@@ -2015,8 +2062,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/timer":
             try:
                 data = json.loads(body)
-                mins = int(data.get("minutes", 30))
+                if "minutes" not in data:
+                    return self._reply(400, "не указано поле minutes")
+                mins = int(data["minutes"])
+                if not 1 <= mins <= 1440:
+                    return self._reply(400, "minutes должно быть от 1 до 1440")
                 act = str(data.get("action", "shutdown"))
+                if act not in ("shutdown", "sleep"):
+                    return self._reply(400, "action: shutdown или sleep")
             except Exception:
                 return self._reply(400, "некорректный JSON таймера")
             code, text = set_custom_timer(mins, act)
@@ -2097,7 +2150,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if self.command == "POST" and self.path.startswith("/mouse"):
                 return
-        log(f"{self.client_address[0]} - {fmt % args}")
+        line = re.sub(r"([?&](?:token|t)=)[^&\s\"]+", r"\1***", fmt % args)
+        log(f"{self._client_ip()} - {line}")
+
+
+class PcServer(ThreadingHTTPServer):
+    allow_reuse_address = not IS_WINDOWS  # на Windows SO_REUSEADDR даёт занять чужой порт
+
+    def server_bind(self):
+        if IS_WINDOWS and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+    def handle_error(self, request, client_address):
+        log(f"[!] Ошибка обработчика {client_address[0]}: {traceback.format_exc()}")
 
 
 def check_paths() -> None:
@@ -2356,7 +2422,7 @@ def _udp_mouse_worker():
             # Автопоиск ПК в локальной Wi-Fi сети без Tailscale
             if text == "PC_DISCOVERY_PING":
                 pc_name = socket.gethostname() or "ПК"
-                reply = f"PC_DISCOVERY_PONG:{pc_name}:{_cloudflare_url}"
+                reply = f"PC_DISCOVERY_PONG:{pc_name}:"
                 sock.sendto(reply.encode("utf-8"), addr)
                 continue
 
@@ -2447,7 +2513,7 @@ if __name__ == "__main__":
     threading.Thread(target=_udp_mouse_worker, daemon=True).start()
     threading.Thread(target=_cloudflared_worker, daemon=True).start()
     try:
-        server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+        server = PcServer(("0.0.0.0", PORT), Handler)
     except OSError as e:
         log(f"[!] Не удалось занять порт {PORT} (возможно, сервер уже запущен): {e}")
         raise SystemExit(1)

@@ -12,7 +12,8 @@ android {
         applicationId = "com.example.pccontrol"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
+        // В CI версия растёт сама (номер запуска), локально остаётся 33
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 100 + it } ?: 33
         versionName = "5.1"
     }
 
@@ -25,12 +26,26 @@ android {
         }
     }
 
+    // Свой ключ: CI кладёт файл и пароли из GitHub Secrets (в репозитории ключа нет)
+    val releaseKeystore = System.getenv("RELEASE_KEYSTORE_PATH")
+    if (releaseKeystore != null) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("customDebug")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
