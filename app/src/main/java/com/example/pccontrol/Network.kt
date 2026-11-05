@@ -90,46 +90,74 @@ suspend fun runMjpegStream(
         val opts = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.RGB_565
             inMutable = true
+            inSampleSize = 1
         }
         var frameCount = 0
         var lastFpsTime = System.currentTimeMillis()
         var calcFps = fps
-        val lineBuf = java.io.ByteArrayOutputStream(128)
 
-        fun readLineAscii(): String? {
-            lineBuf.reset()
-            while (true) {
-                val b = stream.read()
-                if (b == -1) return null
-                if (b == '\n'.code) {
-                    val bytes = lineBuf.toByteArray()
-                    val len = if (bytes.isNotEmpty() && bytes.last() == '\r'.code.toByte()) bytes.size - 1 else bytes.size
-                    return String(bytes, 0, len, Charsets.US_ASCII)
-                }
-                lineBuf.write(b)
-            }
-        }
+        // Переиспользуемый буфер байтов кадра и заголовков (Zero GC Allocations для супер-плавности)
+        var reusableFrameBuffer = ByteArray(256 * 1024)
+        val headerBuf = ByteArray(128)
 
         while (coroutineContext.isActive) {
             val frameStartMs = System.currentTimeMillis()
             var contentLength = -1
+
             while (coroutineContext.isActive) {
-                val line = readLineAscii() ?: return@withContext
-                if (line.startsWith("Content-Length:", ignoreCase = true)) {
-                    contentLength = line.substringAfter(":").trim().toIntOrNull() ?: -1
-                } else if (line.isEmpty() && contentLength > 0) {
+                var lineLen = 0
+                while (true) {
+                    val b = stream.read()
+                    if (b == -1) return@withContext
+                    if (b == 10) break // '\n'
+                    if (lineLen < headerBuf.size) {
+                        headerBuf[lineLen++] = b.toByte()
+                    }
+                }
+                val effLen = if (lineLen > 0 && headerBuf[lineLen - 1] == 13.toByte()) lineLen - 1 else lineLen // '\r'
+                if (effLen == 0 && contentLength > 0) {
                     break
                 }
+                if (effLen > 15) {
+                    val prefix = "content-length:"
+                    var match = true
+                    for (i in 0 until 15) {
+                        val c = headerBuf[i].toInt().toChar().lowercaseChar()
+                        if (c != prefix[i]) {
+                            match = false
+                            break
+                        }
+                    }
+                    if (match) {
+                        var parsedVal = 0
+                        var idx = 15
+                        while (idx < effLen && (headerBuf[idx] == 32.toByte() || headerBuf[idx] == 9.toByte())) {
+                            idx++
+                        }
+                        while (idx < effLen && headerBuf[idx] in 48.toByte()..57.toByte()) {
+                            parsedVal = parsedVal * 10 + (headerBuf[idx] - 48.toByte())
+                            idx++
+                        }
+                        if (parsedVal > 0) {
+                            contentLength = parsedVal
+                        }
+                    }
+                }
             }
-            if (contentLength <= 0) break
 
-            val frameBytes = ByteArray(contentLength)
+            if (contentLength <= 0 || contentLength > 10 * 1024 * 1024) break
+
+            if (contentLength > reusableFrameBuffer.size) {
+                reusableFrameBuffer = ByteArray(maxOf(contentLength + 32768, reusableFrameBuffer.size * 2))
+            }
+
             var readTotal = 0
             while (readTotal < contentLength && coroutineContext.isActive) {
-                val r = stream.read(frameBytes, readTotal, contentLength - readTotal)
+                val r = stream.read(reusableFrameBuffer, readTotal, contentLength - readTotal)
                 if (r == -1) break
                 readTotal += r
             }
+
             if (readTotal == contentLength) {
                 var skip = 0
                 while (skip < 2 && coroutineContext.isActive) {
@@ -137,13 +165,15 @@ suspend fun runMjpegStream(
                     if (b == -1) break
                     skip++
                 }
+
                 opts.inBitmap = if (useBufferA) bufferA else bufferB
                 val bmp = try {
-                    BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
+                    BitmapFactory.decodeByteArray(reusableFrameBuffer, 0, contentLength, opts)
                 } catch (_: IllegalArgumentException) {
                     opts.inBitmap = null
-                    BitmapFactory.decodeByteArray(frameBytes, 0, contentLength, opts)
+                    BitmapFactory.decodeByteArray(reusableFrameBuffer, 0, contentLength, opts)
                 }
+
                 if (bmp != null) {
                     if (useBufferA) bufferA = bmp else bufferB = bmp
                     useBufferA = !useBufferA

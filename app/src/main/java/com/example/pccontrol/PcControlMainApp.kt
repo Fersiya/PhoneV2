@@ -49,7 +49,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -265,6 +268,10 @@ fun PcControlMainApp(
 
     // Трансляция экрана
     var isStreamingActive by remember { mutableStateOf(false) }
+    // Пресет качества стрима: 0 = ⚡ 60 FPS Турбо (960p, q=52), 1 = ⚖️ Баланс (1280p, q=62, 45 FPS), 2 = 🔍 FHD 1080p (1920p, q=72, 30 FPS)
+    var streamQualityPreset by remember {
+        mutableIntStateOf(prefs.getInt("stream_quality_preset", 0))
+    }
     var streamFps by remember { mutableIntStateOf(60) }
     var streamAllMonitors by remember { mutableStateOf(false) }
     var directTapMode by remember { mutableStateOf(true) }
@@ -1063,12 +1070,14 @@ fun PcControlMainApp(
         }
     }
 
-    LaunchedEffect(isStreamingActive, streamFps, streamFhdMode, streamAllMonitors, host, token, currentTab) {
+    LaunchedEffect(isStreamingActive, streamQualityPreset, streamFps, streamFhdMode, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val w = if (streamFhdMode) 1920 else if (streamFps >= 90) 1280 else 1440
-                val q = if (streamFhdMode) 68 else 70
-                val targetFps = streamFps
+                val (w, q, targetFps) = when (streamQualityPreset) {
+                    0 -> Triple(960, 52, 60)
+                    1 -> Triple(1280, 62, 45)
+                    else -> Triple(1920, 72, 30)
+                }
 
                 var gotFrames = false
                 try {
@@ -1185,41 +1194,63 @@ fun PcControlMainApp(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Пульт ПК",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "• ${currentTab.title}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                val (dotColor, stateText) = when (pcOnline) {
-                    true -> Color(0xFF10B981) to if (tokenError) "Токен неверен" else "В сети"
-                    false -> Color(0xFFEF4444) to "Не в сети"
-                    null -> Color(0xFF6B7280) to "Настройка"
-                }
                 Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
-                    Text(stateText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "⚡ PC CONTROL",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 1.sp
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                "v6.1",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    val (dotColor, stateText) = when (pcOnline) {
+                        true -> Color(0xFF10B981) to if (tokenError) "Токен неверен" else "В сети"
+                        false -> Color(0xFFEF4444) to "Не в сети"
+                        null -> Color(0xFF6B7280) to "Настройка"
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = dotColor.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, dotColor.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
+                            Text(
+                                stateText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = dotColor
+                            )
+                        }
+                    }
                 }
             }
 
@@ -1348,42 +1379,35 @@ fun PcControlMainApp(
                                 Text("⏹ Остановить трансляцию", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
 
+                            // Режимы плавности и качества видеопотока
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("FPS:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                listOf(30, 60, 90, 120).forEach { fpsVal ->
+                                listOf(
+                                    Triple(0, "⚡ 60 FPS Турбо", Color(0xFF00F0FF)),
+                                    Triple(1, "⚖️ Баланс", Color(0xFFB388FF)),
+                                    Triple(2, "🔍 FHD 1080p", Color(0xFF10B981))
+                                ).forEach { (presetIdx, labelText, accent) ->
                                     FilterChip(
-                                        selected = streamFps == fpsVal,
+                                        selected = streamQualityPreset == presetIdx,
                                         onClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            streamFps = fpsVal
+                                            streamQualityPreset = presetIdx
+                                            prefs.edit().putInt("stream_quality_preset", presetIdx).apply()
                                         },
                                         shape = RoundedCornerShape(10.dp),
                                         colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = if (fpsVal == 90) Color(0xFF8B5CF6) else MaterialTheme.colorScheme.primaryContainer,
-                                            selectedLabelColor = Color.White
+                                            selectedContainerColor = accent.copy(alpha = 0.25f),
+                                            selectedLabelColor = accent
                                         ),
-                                        label = { Text(if (fpsVal == 90) "⚡ 90 FPS" else "$fpsVal FPS") }
+                                        label = { Text(labelText, fontWeight = if (streamQualityPreset == presetIdx) FontWeight.Bold else FontWeight.Normal) }
                                     )
                                 }
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilterChip(
-                                    selected = !streamFhdMode,
-                                    onClick = { streamFhdMode = false },
-                                    shape = RoundedCornerShape(10.dp),
-                                    label = { Text(if (!streamFhdMode) "⚡ HD (60-90 FPS)" else "HD") }
-                                )
-                                FilterChip(
-                                    selected = streamFhdMode,
-                                    onClick = { streamFhdMode = true },
-                                    shape = RoundedCornerShape(10.dp),
-                                    label = { Text(if (streamFhdMode) "🌟 FHD 1080p" else "FHD") }
-                                )
                                 CoolButton(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS") {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
@@ -1420,7 +1444,7 @@ fun PcControlMainApp(
                                         bitmap = currentBmp,
                                         contentDescription = "Экран ПК",
                                         contentScale = ContentScale.FillBounds,
-                                        filterQuality = FilterQuality.Medium,
+                                        filterQuality = FilterQuality.Low,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
@@ -1483,12 +1507,7 @@ fun PcControlMainApp(
                                                 prefs.edit().putBoolean("show_stream_fps_overlay", false).apply()
                                             }
                                     ) {
-                                        Text(
-                                            text = "🟢 ${liveStreamFps} FPS • ${liveStreamPing} мс",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF00E5FF)
-                                        )
+                                        StreamStatsText({ liveStreamFps }, { liveStreamPing }, 11.sp)
                                     }
                                 }
                             }
@@ -1698,6 +1717,25 @@ fun PcControlMainApp(
                             valueRange = 0f..100f,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                         )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(0 to "🔇 0%", 25 to "25%", 50 to "50%", 75 to "75%", 100 to "🔊 100%").forEach { (v, lbl) ->
+                                OutlinedButton(
+                                    onClick = {
+                                        volumeSlider = v.toFloat()
+                                        sendExactVolume(v)
+                                    },
+                                    modifier = Modifier.weight(1f).height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(lbl, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1944,15 +1982,31 @@ fun PcControlMainApp(
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedCard(shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text("Процессор", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("$cpuPercent%", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (cpuPercent > 80) Color(0xFFFF5252) else Color(0xFF00E5FF))
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Процессор", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("$cpuPercent%", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (cpuPercent > 80) Color(0xFFFF5252) else Color(0xFF00E5FF))
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { (cpuPercent / 100f).coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                        color = if (cpuPercent > 80) Color(0xFFFF5252) else Color(0xFF00E5FF),
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
                                 }
                             }
                             OutlinedCard(shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text("ОЗУ ($ramPercent%)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(if (ramTotalGb > 0) "${ramUsedGb} / ${ramTotalGb} ГБ" else "$ramPercent%", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("ОЗУ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(if (ramTotalGb > 0) "${ramUsedGb}/${ramTotalGb} ГБ" else "$ramPercent%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (ramPercent > 85) Color(0xFFFF5252) else Color(0xFFB388FF))
+                                    }
+                                    LinearProgressIndicator(
+                                        progress = { (ramPercent / 100f).coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                        color = if (ramPercent > 85) Color(0xFFFF5252) else Color(0xFFB388FF),
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -1961,11 +2015,20 @@ fun PcControlMainApp(
                             Text("Накопители:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 disks.forEach { disk ->
+                                    val usedPct = if (disk.totalGb > 0) ((disk.totalGb - disk.freeGb).toFloat() / disk.totalGb).coerceIn(0f, 1f) else 0f
                                     OutlinedCard(shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
-                                        Column(modifier = Modifier.padding(8.dp)) {
-                                            Text("Диск ${disk.drive}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Text("${disk.freeGb} ГБ своб.", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                                            Text("Всего: ${disk.totalGb} ГБ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("Диск ${disk.drive}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                Text("${disk.freeGb} ГБ своб.", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                            }
+                                            LinearProgressIndicator(
+                                                progress = { usedPct },
+                                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                                color = if (usedPct > 0.9f) Color(0xFFFF5252) else Color(0xFF10B981),
+                                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                            )
+                                            Text("Всего: ${disk.totalGb} ГБ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -2488,7 +2551,7 @@ fun PcControlMainApp(
                     bitmap = currentBmp,
                     contentDescription = "Полный экран",
                     contentScale = ContentScale.Fit,
-                    filterQuality = FilterQuality.Medium,
+                    filterQuality = FilterQuality.Low,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
