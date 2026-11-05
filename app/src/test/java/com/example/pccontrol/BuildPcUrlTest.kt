@@ -40,4 +40,10 @@ class BuildPcUrlTest {
         val result = buildPcUrl("192.168.0.152", "/api/pair")
         assertEquals("http://192.168.0.152:8765/api/pair", result)
     }
+
+    @Test
+    fun testBuildPcUrl_tunnelEndpoint() {
+        val result = buildPcUrl("192.168.0.152", "/api/tunnel/start")
+        assertEquals("http://192.168.0.152:8765/api/tunnel/start", result)
+    }
 }

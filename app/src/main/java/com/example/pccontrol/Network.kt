@@ -550,3 +550,44 @@ suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
         PairResult(false, "", "Не удалось связаться с ПК: ${e.message ?: "таймаут"}")
     }
 }
+
+suspend fun getTunnelStatus(host: String, token: String): TunnelStatus = withContext(Dispatchers.IO) {
+    if (host.isBlank()) return@withContext TunnelStatus(false, "", false, "Адрес ПК не указан")
+    val r = http(host, token, "/api/tunnel", "GET", timeoutMs = 3000)
+    if (r.code == 200) {
+        try {
+            val o = JSONObject(r.body)
+            TunnelStatus(
+                running = o.optBoolean("running", false),
+                url = o.optString("url", ""),
+                installed = o.optBoolean("installed", false)
+            )
+        } catch (e: Exception) {
+            TunnelStatus(false, "", false, "Ошибка ответа: ${e.message}")
+        }
+    } else {
+        TunnelStatus(false, "", false, "HTTP ${r.code}")
+    }
+}
+
+suspend fun toggleTunnel(host: String, token: String, start: Boolean): TunnelStatus = withContext(Dispatchers.IO) {
+    if (host.isBlank()) return@withContext TunnelStatus(false, "", false, "Адрес ПК не указан")
+    val endpoint = if (start) "/api/tunnel/start" else "/api/tunnel/stop"
+    val r = http(host, token, endpoint, "POST", timeoutMs = 5000)
+    if (r.code == 200) {
+        try {
+            val o = JSONObject(r.body)
+            val info = o.optJSONObject("info")
+            TunnelStatus(
+                running = info?.optBoolean("running", false) ?: start,
+                url = info?.optString("url", "") ?: "",
+                installed = info?.optBoolean("installed", false) ?: true,
+                message = o.optString("message", if (start) "Туннель запускается…" else "Туннель остановлен")
+            )
+        } catch (e: Exception) {
+            TunnelStatus(false, "", false, "Ошибка: ${e.message}")
+        }
+    } else {
+        TunnelStatus(false, "", false, "Ошибка: HTTP ${r.code}")
+    }
+}

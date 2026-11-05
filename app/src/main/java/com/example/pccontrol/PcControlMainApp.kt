@@ -186,6 +186,8 @@ fun PcControlMainApp(
     var ramTotalGb by remember { mutableStateOf(0.0) }
     var ramUsedGb by remember { mutableStateOf(0.0) }
     var disks by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
+    var isTunnelRunning by remember { mutableStateOf(false) }
+    var currentTunnelUrl by remember { mutableStateOf("") }
 
     // Состояние сворачивания карточек в Окна/Софт
     var isProgramsExpanded by remember { mutableStateOf(true) }
@@ -2209,6 +2211,93 @@ fun PcControlMainApp(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                }
+
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val activeTunnelUrl = statusSnapshot?.tunnelUrl?.takeIf { it.isNotBlank() } ?: currentTunnelUrl
+                        val isRunning = activeTunnelUrl.isNotBlank() || isTunnelRunning
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Интернет-туннель (Cloudflare) 🌐", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (isRunning) "🟢 ВКЛЮЧЕН" else "⚪ ВЫКЛЮЧЕН",
+                                color = if (isRunning) Color(0xFF10B981) else Color.Gray,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Text(
+                            "Позволяет управлять ПК вне дома через мобильный интернет 4G/LTE без белого IP и без VPN.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (activeTunnelUrl.isNotBlank()) {
+                            OutlinedCard(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = activeTunnelUrl,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = {
+                                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                clip.setPrimaryClip(ClipData.newPlainText("tunnel_url", activeTunnelUrl))
+                                                status = "Ссылка туннеля скопирована в буфер 📋"
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Копировать", fontSize = 12.sp)
+                                        }
+                                        Button(
+                                            onClick = {
+                                                host = activeTunnelUrl
+                                                save()
+                                                status = "Адрес ПК переключен на Cloudflare туннель ✔"
+                                                scope.launch { refresh() }
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Использовать", fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val start = !isRunning
+                                    status = if (start) "Запускаю Cloudflare туннель на ПК…" else "Останавливаю Cloudflare туннель на ПК…"
+                                    val res = toggleTunnel(host.trim(), token.trim(), start)
+                                    isTunnelRunning = res.running
+                                    currentTunnelUrl = res.url
+                                    status = res.message.ifBlank { if (res.running) "Туннель запущен!" else "Туннель выключен" }
+                                    scope.launch { refresh() }
+                                }
+                            },
+                            colors = if (isRunning) ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)) else ButtonDefaults.buttonColors(),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isRunning) "Остановить интернет-туннель 🛑" else "Включить интернет-туннель (4G) 🚀")
+                        }
                     }
                 }
 
