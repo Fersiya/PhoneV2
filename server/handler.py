@@ -1,4 +1,5 @@
 """HTTP-обработчик запросов пульта и класс сервера PcServer."""
+import ipaddress
 import json
 import os
 import re
@@ -13,11 +14,13 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import (
     PORT,
+    TOKEN,
     IS_WINDOWS,
     UPDATES_DIR,
     APP_LIST,
     APPS,
     log,
+    reload_config_if_needed,
 )
 from .auth import check_authorized
 from .capture import capture_screen_jpeg
@@ -57,6 +60,18 @@ __all__ = [
     "Handler",
     "PcServer",
 ]
+
+
+def _is_local_request(client_ip: str) -> bool:
+    if not client_ip:
+        return False
+    if client_ip in ("127.0.0.1", "::1", "localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(client_ip)
+        return ip.is_private or ip.is_loopback
+    except Exception:
+        return False
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -114,6 +129,34 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps({
                     "online": True,
                     "authorized": auth_ok,
+                    "pc": pc_name,
+                    "tunnel": cloudflare_url
+                }, ensure_ascii=False),
+                "application/json"
+            )
+
+        # Сопряжение в 1 клик для локальной сети Wi-Fi (выдача токена приложению без ручного ввода на ПК)
+        if path in ("/api/pair", "/pair"):
+            client_ip = self.client_address[0]
+            if not _is_local_request(client_ip):
+                return self._reply(
+                    403,
+                    json.dumps({
+                        "status": "forbidden",
+                        "message": "Сопряжение разрешено только в домашней сети Wi-Fi"
+                    }, ensure_ascii=False),
+                    "application/json"
+                )
+            reload_config_if_needed()
+            from . import config
+            tok = config.TOKEN
+            pc_name = socket.gethostname() or "ПК"
+            log(f"[Pairing] Телефон ({client_ip}) запросил токен сопряжения. Токен успешно выдан.")
+            return self._reply(
+                200,
+                json.dumps({
+                    "status": "ok",
+                    "token": tok,
                     "pc": pc_name,
                     "tunnel": cloudflare_url
                 }, ensure_ascii=False),

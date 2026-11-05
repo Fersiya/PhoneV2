@@ -47,6 +47,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -616,11 +617,17 @@ fun PcControlMainApp(
                     val pcName = if (parts.size >= 2) parts[1] else "ПК"
                     val tunnelUrl = if (parts.size >= 3) parts.subList(2, parts.size).joinToString(":") else ""
                     val foundHost = replyPacket.address.hostAddress ?: ""
+                    val pairRes = pairWithPc(foundHost)
                     withContext(Dispatchers.Main) {
                         host = foundHost
+                        if (pairRes.success && pairRes.token.isNotBlank()) {
+                            token = pairRes.token
+                            tokenError = false
+                        }
                         save()
+                        val tokenNote = if (pairRes.success) " ✔ Токен получен" else ""
                         val tunnelNote = if (tunnelUrl.isNotBlank()) " (Туннель: $tunnelUrl)" else ""
-                        status = "Найден ПК: $pcName ($foundHost) ✔$tunnelNote"
+                        status = "Найден ПК: $pcName ($foundHost)$tokenNote$tunnelNote"
                         scope.launch { refresh() }
                     }
                     found = true
@@ -2171,6 +2178,28 @@ fun PcControlMainApp(
                             visualTransformation = PasswordVisualTransformation(),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        FilledTonalButton(
+                            onClick = {
+                                scope.launch {
+                                    status = "Запрашиваю токен у ПК ($host)…"
+                                    val res = pairWithPc(host.trim())
+                                    if (res.success && res.token.isNotBlank()) {
+                                        token = res.token
+                                        tokenError = false
+                                        save()
+                                        status = res.message
+                                        scope.launch { refresh() }
+                                    } else {
+                                        status = res.message
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("🔑 Получить токен с ПК по кнопке")
+                        }
                         OutlinedTextField(
                             value = mac,
                             onValueChange = { mac = it },

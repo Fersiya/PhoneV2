@@ -12,6 +12,7 @@ from server.power import POWER
 from server.media_keys import MEDIA_KEYS, COMBO_KEYS
 from server.ota import get_apk_manifest_version
 from server.auth import _auth_fails, check_authorized
+from server.handler import _is_local_request
 
 
 class ServerConfigTestCase(unittest.TestCase):
@@ -48,6 +49,16 @@ class ServerSecurityTestCase(unittest.TestCase):
         self.assertIn(".jpg", MEDIA_EXTS)
         self.assertIn(".png", MEDIA_EXTS)
         self.assertIn(".mp4", MEDIA_EXTS)
+
+    def test_is_local_request(self):
+        self.assertTrue(_is_local_request("127.0.0.1"))
+        self.assertTrue(_is_local_request("192.168.0.152"))
+        self.assertTrue(_is_local_request("192.168.1.100"))
+        self.assertTrue(_is_local_request("10.0.0.5"))
+        self.assertTrue(_is_local_request("172.16.0.10"))
+        # Внешние IP публичного интернета не должны иметь доступ к сопряжению
+        self.assertFalse(_is_local_request("8.8.8.8"))
+        self.assertFalse(_is_local_request("185.2.186.215"))
         self.assertNotIn(".exe", MEDIA_EXTS)
         self.assertNotIn(".bat", MEDIA_EXTS)
         self.assertNotIn(".ps1", MEDIA_EXTS)

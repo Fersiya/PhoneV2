@@ -34,4 +34,10 @@ class BuildPcUrlTest {
         val result = buildPcUrl("https://custom-domain.com", "/screen")
         assertEquals("https://custom-domain.com/screen", result)
     }
+
+    @Test
+    fun testBuildPcUrl_pairEndpoint() {
+        val result = buildPcUrl("192.168.0.152", "/api/pair")
+        assertEquals("http://192.168.0.152:8765/api/pair", result)
+    }
 }

@@ -517,3 +517,36 @@ suspend fun syncPendingMedia(
         mediaSyncMutex.unlock()
     }
 }
+
+suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
+    if (host.isBlank()) {
+        return@withContext PairResult(false, "", "Сначала укажите адрес ПК или нажмите «Найти ПК в Wi-Fi»")
+    }
+    try {
+        val targetUrl = buildPcUrl(host, "/api/pair")
+        val conn = URL(targetUrl).openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 3000
+        conn.readTimeout = 4000
+        conn.setRequestProperty("User-Agent", USER_AGENT)
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+        if (code == 200) {
+            val json = JSONObject(text)
+            val tok = json.optString("token", "")
+            val pc = json.optString("pc", "ПК")
+            if (tok.isNotBlank()) {
+                PairResult(true, tok, "Токен успешно получен от $pc ✔")
+            } else {
+                PairResult(false, "", "ПК ответил, но токен пустой")
+            }
+        } else if (code == 403) {
+            PairResult(false, "", "ПК отклонил запрос: разрешено только в домашней сети Wi-Fi")
+        } else {
+            PairResult(false, "", "Ошибка ПК: HTTP $code ($text)")
+        }
+    } catch (e: Exception) {
+        PairResult(false, "", "Не удалось связаться с ПК: ${e.message ?: "таймаут"}")
+    }
+}

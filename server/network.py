@@ -269,10 +269,10 @@ def _udp_mouse_worker() -> None:
                 continue
             text = data.decode("utf-8", errors="ignore").strip()
 
-            # Автопоиск ПК в локальной Wi-Fi сети без Tailscale
+            # Автопоиск ПК в локальной Wi-Fi сети (с автоматической передачей токена для сопряжения в 1 клик)
             if text == "PC_DISCOVERY_PING":
                 pc_name = socket.gethostname() or "ПК"
-                reply = f"PC_DISCOVERY_PONG:{pc_name}:{_cloudflare_url}"
+                reply = f"PC_DISCOVERY_PONG:{pc_name}:{_cloudflare_url}:{TOKEN}"
                 sock.sendto(reply.encode("utf-8"), addr)
                 continue
 
