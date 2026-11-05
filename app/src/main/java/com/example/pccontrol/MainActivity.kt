@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -698,6 +699,66 @@ suspend fun sendMagicPacket(mac: String): String =
             "Не удалось отправить (${e.javaClass.simpleName})"
         }
     }
+
+@Composable
+private fun GamepadKeyButton(
+    label: String,
+    subLabel: String = "",
+    vk: Int,
+    accentColor: Color = Color(0xFF00E5FF),
+    modifier: Modifier = Modifier,
+    onKey: (Int, Boolean) -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    var isPressed by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (isPressed) accentColor.copy(alpha = 0.45f)
+                else accentColor.copy(alpha = 0.12f)
+            )
+            .border(
+                width = if (isPressed) 2.dp else 1.dp,
+                color = if (isPressed) accentColor else accentColor.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .pointerInput(vk) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onKey(vk, true)
+                        tryAwaitRelease()
+                        isPressed = false
+                        onKey(vk, false)
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isPressed) Color.White else accentColor
+            )
+            if (subLabel.isNotBlank()) {
+                Text(
+                    text = subLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun RowScope.CoolButton(
@@ -2454,10 +2515,10 @@ fun PcControlMainApp(
 
                         // Верхние триггеры (Bumpers) & Меню (Esc / Enter)
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            GamepadKeyButton("LB", "Shift", 0x10, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
-                            GamepadKeyButton("ESC", "Пауза", 0x1B, Color(0xFFF43F5E), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
-                            GamepadKeyButton("ENTER", "Выбор", 0x0D, Color(0xFF10B981), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
-                            GamepadKeyButton("RB", "Ctrl", 0x11, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), ::sendGamepadKey)
+                            GamepadKeyButton("LB", "Shift", 0x10, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("ESC", "Пауза", 0x1B, Color(0xFFF43F5E), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("ENTER", "Выбор", 0x0D, Color(0xFF10B981), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("RB", "Ctrl", 0x11, Color(0xFF38BDF8), Modifier.weight(1f).height(44.dp), { vk, down -> sendGamepadKey(vk, down) })
                         }
 
                         // Основная секция: D-Pad слева, Action diamond справа
@@ -2473,11 +2534,11 @@ fun PcControlMainApp(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Крестовина (WASD)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
-                                GamepadKeyButton("▲", "W", 0x57, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
+                                GamepadKeyButton("▲", "W", 0x57, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    GamepadKeyButton("◀", "A", 0x41, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
-                                    GamepadKeyButton("▼", "S", 0x53, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
-                                    GamepadKeyButton("▶", "D", 0x44, Color(0xFF00E5FF), Modifier.size(54.dp), ::sendGamepadKey)
+                                    GamepadKeyButton("◀", "A", 0x41, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
+                                    GamepadKeyButton("▼", "S", 0x53, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
+                                    GamepadKeyButton("▶", "D", 0x44, Color(0xFF00E5FF), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
                                 }
                             }
 
@@ -2496,27 +2557,27 @@ fun PcControlMainApp(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Действия", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
-                                GamepadKeyButton("Y", "F", 0x46, Color(0xFFFBBF24), Modifier.size(54.dp), ::sendGamepadKey)
+                                GamepadKeyButton("Y", "F", 0x46, Color(0xFFFBBF24), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    GamepadKeyButton("X", "R / Перезарядка", 0x52, Color(0xFF38BDF8), Modifier.size(54.dp), ::sendGamepadKey)
-                                    GamepadKeyButton("B", "E / Использовать", 0x45, Color(0xFFF43F5E), Modifier.size(54.dp), ::sendGamepadKey)
+                                    GamepadKeyButton("X", "R / Перезарядка", 0x52, Color(0xFF38BDF8), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
+                                    GamepadKeyButton("B", "E / Использовать", 0x45, Color(0xFFF43F5E), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
                                 }
-                                GamepadKeyButton("A", "Прыжок (Space)", 0x20, Color(0xFF10B981), Modifier.size(54.dp), ::sendGamepadKey)
+                                GamepadKeyButton("A", "Прыжок (Space)", 0x20, Color(0xFF10B981), Modifier.size(54.dp), { vk, down -> sendGamepadKey(vk, down) })
                             }
                         }
 
                         // Стрелки курсора и быстрые игровые функции
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            GamepadKeyButton("←", "Left", 0x25, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
-                            GamepadKeyButton("↑", "Up", 0x26, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
-                            GamepadKeyButton("↓", "Down", 0x28, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
-                            GamepadKeyButton("→", "Right", 0x27, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), ::sendGamepadKey)
+                            GamepadKeyButton("←", "Left", 0x25, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("↑", "Up", 0x26, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("↓", "Down", 0x28, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("→", "Right", 0x27, Color(0xFFA78BFA), Modifier.weight(1f).height(42.dp), { vk, down -> sendGamepadKey(vk, down) })
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            GamepadKeyButton("Tab", "Инвентарь", 0x09, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), ::sendGamepadKey)
-                            GamepadKeyButton("M", "Карта", 0x4D, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), ::sendGamepadKey)
-                            GamepadKeyButton("I", "Снаряжение", 0x49, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), ::sendGamepadKey)
+                            GamepadKeyButton("Tab", "Инвентарь", 0x09, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("M", "Карта", 0x4D, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), { vk, down -> sendGamepadKey(vk, down) })
+                            GamepadKeyButton("I", "Снаряжение", 0x49, Color(0xFF64748B), Modifier.weight(1f).height(38.dp), { vk, down -> sendGamepadKey(vk, down) })
                         }
                     }
                 }
@@ -3512,68 +3573,4 @@ fun PcControlMainApp(
             }
         )
     }
-
-
-
-
-@Composable
-private fun GamepadKeyButton(
-    label: String,
-    subLabel: String = "",
-    vk: Int,
-    accentColor: Color = Color(0xFF00E5FF),
-    modifier: Modifier = Modifier,
-    onKey: (Int, Boolean) -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    var isPressed by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (isPressed) accentColor.copy(alpha = 0.45f)
-                else accentColor.copy(alpha = 0.12f)
-            )
-            .border(
-                width = if (isPressed) 2.dp else 1.dp,
-                color = if (isPressed) accentColor else accentColor.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .pointerInput(vk) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onKey(vk, true)
-                        tryAwaitRelease()
-                        isPressed = false
-                        onKey(vk, false)
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (isPressed) Color.White else accentColor
-            )
-            if (subLabel.isNotBlank()) {
-                Text(
-                    text = subLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
-            }
-        }
-    }
-}
-
 }
