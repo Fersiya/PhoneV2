@@ -703,6 +703,9 @@ fun PcControlMainApp(
                 val cands = fetchRemoteCandidates()
                 val alive = cands.firstOrNull { it != rem && pingOk(it, 3500) }
                 val fresh = alive ?: cands.firstOrNull() ?: ""
+                if (cands.isEmpty()) {
+                    status = "Облако (ntfy.sh) не отдало адрес туннеля: нет интернета, сайт заблокирован оператором или ПК ещё не опубликовал адрес"
+                }
                 if (fresh.isNotBlank()) {
                     rem = fresh
                     remoteHost = fresh
@@ -713,7 +716,7 @@ fun PcControlMainApp(
                 host = rem
                 routeLabel = "🌐 Через интернет"
             } else {
-                routeLabel = "⚠️ Адрес вне дома не задан"
+                routeLabel = "⚠️ Адрес вне дома не задан (откройте приложение дома хотя бы раз)"
             }
         } else {
             if (lan.isNotBlank()) host = lan
@@ -788,6 +791,7 @@ fun PcControlMainApp(
                             token = pairRes.token
                             tokenError = false
                             if (pairRes.mac.isNotBlank()) mac = pairRes.mac
+                            if (pairRes.tunnel.startsWith("https://")) remoteHost = pairRes.tunnel
                         }
                         save()
                         val tokenNote = if (pairRes.success) " ✔ Токен получен" else " — ${pairRes.message}"
@@ -2352,6 +2356,7 @@ fun PcControlMainApp(
                                         token = res.token
                                         tokenError = false
                                         if (res.mac.isNotBlank()) mac = res.mac
+                                        if (res.tunnel.startsWith("https://")) remoteHost = res.tunnel
                                         save()
                                         status = res.message
                                         scope.launch { refresh() }
