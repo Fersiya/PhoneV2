@@ -1,6 +1,11 @@
 package com.example.pccontrol
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -142,4 +147,38 @@ fun StreamStatsText(fpsProvider: () -> Int, pingProvider: () -> Long, fontSize: 
         fontWeight = FontWeight.Bold,
         color = Color(0xFF00E5FF)
     )
+}
+
+/** Сворачиваемый раздел настроек: заголовок с кратким состоянием, содержимое по нажатию. */
+@Composable
+fun SettingsSection(
+    title: String,
+    summary: String = "",
+    startExpanded: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(startExpanded) }
+    OutlinedCard(
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().animateContentSize()
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (summary.isNotBlank()) {
+                        Text(summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Text(if (expanded) "▲" else "▼", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (expanded) content()
+        }
+    }
 }

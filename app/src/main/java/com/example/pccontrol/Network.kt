@@ -572,7 +572,8 @@ suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
                 PairResult(false, "", "ПК ответил, но токен пустой")
             }
         } else if (code == 403) {
-            PairResult(false, "", "ПК отклонил запрос: разрешено только в домашней сети Wi-Fi")
+            val serverMsg = try { JSONObject(text).optString("message", "") } catch (_: Exception) { "" }
+            PairResult(false, "", serverMsg.ifBlank { "ПК отклонил запрос: разрешено только в домашней сети Wi-Fi" })
         } else {
             PairResult(false, "", "Ошибка ПК: HTTP $code ($text)")
         }

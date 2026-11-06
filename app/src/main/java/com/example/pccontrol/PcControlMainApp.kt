@@ -23,6 +23,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -780,7 +781,7 @@ fun PcControlMainApp(
                             tokenError = false
                         }
                         save()
-                        val tokenNote = if (pairRes.success) " ✔ Токен получен" else ""
+                        val tokenNote = if (pairRes.success) " ✔ Токен получен" else " — ${pairRes.message}"
                         val tunnelNote = if (tunnelUrl.isNotBlank()) " (Туннель: $tunnelUrl)" else ""
                         status = "Найден ПК: $pcName ($foundHost)$tokenNote$tunnelNote"
                         scope.launch { refresh() }
@@ -791,7 +792,7 @@ fun PcControlMainApp(
             } catch (_: Exception) {}
             if (!found) {
                 withContext(Dispatchers.Main) {
-                    status = "ПК в локальной сети не найден. Убедитесь, что server.py запущен."
+                    status = "ПК в локальной сети не найден. Убедитесь, что на ПК запущен «Пульт ПК» и телефон в той же Wi-Fi сети."
                 }
             }
         }
@@ -2232,21 +2233,8 @@ fun PcControlMainApp(
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Оформление", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AppThemes.forEach { (id, title, scheme) ->
-                                FilterChip(
-                                    selected = themeId == id,
-                                    onClick = { onThemeChange(id) },
-                                    leadingIcon = { Box(modifier = Modifier.size(12.dp).background(scheme.primary, CircleShape)) },
-                                    label = { Text(title) }
-                                )
-                            }
-                        }
-                        Text("Настройки подключения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
+                SettingsSection(title = "🔌 Подключение", summary = routeLabel.ifBlank { "Не настроено" }, startExpanded = true) {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("auto" to "🔄 Авто", "lan" to "🏠 Дома", "remote" to "🌐 Вне дома").forEach { (mode, title) ->
                                 FilterChip(
@@ -2259,28 +2247,12 @@ fun PcControlMainApp(
                         if (routeLabel.isNotBlank()) {
                             Text("Сейчас: $routeLabel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
-                        OutlinedTextField(
-                            value = lanHost,
-                            onValueChange = { lanHost = it },
-                            label = { Text("Адрес дома (IP ПК в Wi-Fi)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = remoteHost,
-                            onValueChange = { remoteHost = it },
-                            label = { Text("Адрес вне дома (Cloudflare)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedButton(
-                            onClick = { fetchLatestTunnelUrl() },
+                        Button(
+                            onClick = { discoverLocalPc() },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("🔄 Получить интернет-адрес с ПК (Cloudflare)", fontSize = 12.sp)
+                            Text("🔍 Найти ПК в Wi-Fi", fontWeight = FontWeight.Bold)
                         }
                         OutlinedButton(
                             onClick = { runDiagnostics() },
@@ -2305,10 +2277,38 @@ fun PcControlMainApp(
                                 )
                             }
                         }
+                        var showAdvanced by rememberSaveable { mutableStateOf(false) }
+                        TextButton(onClick = { showAdvanced = !showAdvanced }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (showAdvanced) "Скрыть адреса и токен ▲" else "Адреса, токен, MAC ▼")
+                        }
+                        if (showAdvanced) {
+                        OutlinedTextField(
+                            value = lanHost,
+                            onValueChange = { lanHost = it },
+                            label = { Text("Адрес дома (IP ПК в Wi-Fi)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = remoteHost,
+                            onValueChange = { remoteHost = it },
+                            label = { Text("Адрес вне дома (Cloudflare)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedButton(
+                            onClick = { fetchLatestTunnelUrl() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("🔄 Получить интернет-адрес с ПК", fontSize = 12.sp)
+                        }
                         OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
-                            label = { Text("Токен (из config.json на ПК)") },
+                            label = { Text("Токен (из окна «Пульт ПК» на компьютере)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             visualTransformation = PasswordVisualTransformation(),
@@ -2344,11 +2344,27 @@ fun PcControlMainApp(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+                        }
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsSection(title = "🎨 Оформление", summary = AppThemes.firstOrNull { it.first == themeId }?.second ?: "") {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AppThemes.forEach { (id, title, scheme) ->
+                                FilterChip(
+                                    selected = themeId == id,
+                                    onClick = { onThemeChange(id) },
+                                    leadingIcon = { Box(modifier = Modifier.size(12.dp).background(scheme.primary, CircleShape)) },
+                                    label = { Text(title) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                SettingsSection(title = "🌐 Интернет-туннель", summary = if (currentTunnelUrl.isNotBlank() || isTunnelRunning) "Включён" else "Выключен") {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val activeTunnelUrl = currentTunnelUrl
                         val isRunning = activeTunnelUrl.isNotBlank() || isTunnelRunning
 
@@ -2357,7 +2373,7 @@ fun PcControlMainApp(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Интернет-туннель (Cloudflare) 🌐", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Статус", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
                                 if (isRunning) "🟢 ВКЛЮЧЕН" else "⚪ ВЫКЛЮЧЕН",
                                 color = if (isRunning) Color(0xFF10B981) else Color.Gray,
@@ -2366,7 +2382,7 @@ fun PcControlMainApp(
                             )
                         }
                         Text(
-                            "Позволяет управлять ПК вне дома через мобильный интернет 4G/LTE без белого IP и без VPN.",
+                            "Нужен для управления вне дома. В режиме «Авто» адрес подставляется сам.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2434,9 +2450,8 @@ fun PcControlMainApp(
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Обновление приложения (OTA)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                SettingsSection(title = "🔄 Обновления", summary = "Версия ${getInstalledVersionName(context)}") {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             "Установленная версия: v${getInstalledVersionName(context)} (код ${getInstalledVersionCode(context)})",
                             style = MaterialTheme.typography.bodyMedium,
@@ -2460,17 +2475,16 @@ fun PcControlMainApp(
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsSection(title = "📸 Автозагрузка фото", summary = if (autoSyncMedia) "Включена" else "Выключена") {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Автозагрузка новых фото 📸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text(
-                                    "Свежие снимки с камеры автоматически сохраняются в D:\\Photos на ПК по сети",
+                                    "Новые снимки с камеры сами копируются в папку фото на ПК, пока вы в сети",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2532,24 +2546,6 @@ fun PcControlMainApp(
                             ) {
                                 Text("Синхронизировать сейчас 🔄")
                             }
-                        }
-                    }
-                }
-
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Поиск ПК в домашней сети", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("Автоопределение IP и токена без ввода цифр", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Button(
-                            onClick = { discoverLocalPc() },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("🔍 Найти ПК в сети Wi-Fi", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
