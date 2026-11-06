@@ -1391,14 +1391,13 @@ fun PcControlMainApp(
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.combinedClickable(
-                        onClick = {},
-                        onLongClick = {
+                    modifier = Modifier.pointerInput(status) {
+                        androidx.compose.foundation.gestures.detectTapGestures(onLongPress = {
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             cm.setPrimaryClip(android.content.ClipData.newPlainText("status", status))
                             android.widget.Toast.makeText(context, "Скопировано", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    )
+                        })
+                    }
                 )
             }
 
