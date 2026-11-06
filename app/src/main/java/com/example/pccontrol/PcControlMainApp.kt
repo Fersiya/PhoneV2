@@ -655,8 +655,6 @@ fun PcControlMainApp(
     }
 
     // Свежий интернет-адрес ПК из облачного канала (его туда кладёт сервер при запуске туннеля)
-    suspend fun fetchRemoteFromCloud(): String = fetchRemoteCandidates().firstOrNull() ?: ""
-
     suspend fun fetchRemoteCandidates(): List<String> = withContext(Dispatchers.IO) {
         if (token.isBlank()) return@withContext emptyList()
         try {
@@ -672,6 +670,8 @@ fun PcControlMainApp(
             emptyList()
         }
     }
+
+    suspend fun fetchRemoteFromCloud(): String = fetchRemoteCandidates().firstOrNull() ?: ""
 
     // Выбор маршрута: сначала домашний адрес, если ПК не отвечает — интернет-адрес (Cloudflare)
     suspend fun resolveRoute() {
