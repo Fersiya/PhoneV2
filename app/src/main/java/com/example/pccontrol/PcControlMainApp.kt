@@ -655,19 +655,21 @@ fun PcControlMainApp(
     }
 
     // Свежий интернет-адрес ПК из облачного канала (его туда кладёт сервер при запуске туннеля)
-    suspend fun fetchRemoteFromCloud(): String = withContext(Dispatchers.IO) {
-        if (token.isBlank()) return@withContext ""
+    suspend fun fetchRemoteFromCloud(): String = fetchRemoteCandidates().firstOrNull() ?: ""
+
+    suspend fun fetchRemoteCandidates(): List<String> = withContext(Dispatchers.IO) {
+        if (token.isBlank()) return@withContext emptyList()
         try {
             val hashBytes = java.security.MessageDigest.getInstance("SHA-256").digest(token.trim().toByteArray(Charsets.UTF_8))
             val channelId = "pcremote_" + hashBytes.joinToString("") { "%02x".format(it) }.take(16)
             val conn = URL("https://ntfy.sh/$channelId/raw?poll=1").openConnection() as HttpURLConnection
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
-            if (conn.responseCode != 200) return@withContext ""
+            if (conn.responseCode != 200) return@withContext emptyList()
             val raw = conn.inputStream.bufferedReader().use { it.readText() }
-            raw.lines().lastOrNull { it.startsWith("https://") }?.trim() ?: ""
+            raw.lines().map { it.trim() }.filter { it.startsWith("https://") }.reversed().distinct().take(4)
         } catch (_: Exception) {
-            ""
+            emptyList()
         }
     }
 
@@ -695,10 +697,14 @@ fun PcControlMainApp(
             }
         } else if (connMode != "lan") {
             if (rem.isBlank() || !pingOk(rem, 4000)) {
-                val fresh = fetchRemoteFromCloud()
+                // Берём самый свежий адрес из облака, но если он не отвечает — пробуем предыдущие (ntfy хранит историю)
+                val cands = fetchRemoteCandidates()
+                val alive = cands.firstOrNull { it != rem && pingOk(it, 3500) }
+                val fresh = alive ?: cands.firstOrNull() ?: ""
                 if (fresh.isNotBlank()) {
                     rem = fresh
                     remoteHost = fresh
+                    save()
                 }
             }
             if (rem.isNotBlank()) {
@@ -779,6 +785,7 @@ fun PcControlMainApp(
                         if (pairRes.success && pairRes.token.isNotBlank()) {
                             token = pairRes.token
                             tokenError = false
+                            if (pairRes.mac.isNotBlank()) mac = pairRes.mac
                         }
                         save()
                         val tokenNote = if (pairRes.success) " ✔ Токен получен" else " — ${pairRes.message}"
@@ -1084,6 +1091,8 @@ fun PcControlMainApp(
     LaunchedEffect(currentTab) {
         if (currentTab == NavTab.APPS) refresh()
     }
+
+    var showFileBrowser by remember { mutableStateOf(false) }
 
     fun browseFiles(path: String = fileBrowsePath) {
         if (host.isBlank() || token.isBlank()) return
@@ -1959,100 +1968,111 @@ fun PcControlMainApp(
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Проводник файлов ПК 📁", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            if (fileBrowseParent.isNotBlank()) {
-                                OutlinedButton(onClick = { browseFiles(fileBrowseParent) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                                    Text("⬆ Наверх", fontSize = 12.sp)
-                                }
-                            }
-                        }
+            }
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            fileBrowseDrives.forEach { drive ->
-                                FilterChip(
-                                    selected = fileBrowsePath.startsWith(drive, ignoreCase = true),
-                                    onClick = { browseFiles("$drive\\") },
-                                    label = { Text("Диск $drive") }
-                                )
-                            }
-                            OutlinedButton(onClick = { browseFiles(fileBrowsePath) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                                Text("🔄", fontSize = 13.sp)
-                            }
-                        }
-
-                        Text("Путь: $fileBrowsePath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-
-                        if (isBrowsingFiles) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally))
-                        } else if (fileBrowseEntries.isEmpty()) {
-                            Text("Папка пуста или нажмите 🔄 для загрузки", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                                fileBrowseEntries.forEach { entry ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)).padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Text(if (entry.isDir) "📁" else when {
-                                                entry.name.endsWith(".jpg", true) || entry.name.endsWith(".png", true) -> "🖼️"
-                                                entry.name.endsWith(".mp4", true) || entry.name.endsWith(".mkv", true) -> "🎬"
-                                                entry.name.endsWith(".mp3", true) || entry.name.endsWith(".flac", true) -> "🎵"
-                                                else -> "📄"
-                                            }, fontSize = 18.sp)
-                                            Column {
-                                                Text(entry.name, fontSize = 13.sp, fontWeight = if (entry.isDir) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                if (!entry.isDir) {
-                                                    val sizeMb = entry.size / (1024.0 * 1024.0)
-                                                    val sizeText = if (sizeMb >= 1.0) String.format(Locale.US, "%.1f МБ", sizeMb) else "${entry.size / 1024} КБ"
-                                                    Text(sizeText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            }
+            // ==================== 5. ПИТАНИЕ И ЭКРАН ====================
+            if (currentTab == NavTab.POWER) {
+                if (showFileBrowser) {
+                    androidx.compose.ui.window.Dialog(onDismissRequest = { showFileBrowser = false }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+                        Surface(modifier = Modifier.fillMaxSize().padding(8.dp), shape = RoundedCornerShape(20.dp)) {
+                            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = { showFileBrowser = false }) { Text("✕ Закрыть") }
+                        OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Файлы ПК 📁", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    if (fileBrowseParent.isNotBlank()) {
+                                        OutlinedButton(onClick = { browseFiles(fileBrowseParent) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                                            Text("⬆ Наверх", fontSize = 12.sp)
                                         }
-                                        if (entry.isDir) {
-                                            OutlinedButton(
-                                                onClick = {
-                                                    val next = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) "$fileBrowsePath${entry.name}" else "$fileBrowsePath\\${entry.name}"
-                                                    browseFiles(next)
-                                                },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    }
+                                }
+        
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    fileBrowseDrives.forEach { drive ->
+                                        FilterChip(
+                                            selected = fileBrowsePath.startsWith(drive, ignoreCase = true),
+                                            onClick = { browseFiles("$drive\\") },
+                                            label = { Text("Диск $drive") }
+                                        )
+                                    }
+                                    OutlinedButton(onClick = { browseFiles(fileBrowsePath) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                                        Text("🔄", fontSize = 13.sp)
+                                    }
+                                }
+        
+                                Text("Путь: $fileBrowsePath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        
+                                if (isBrowsingFiles) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally))
+                                } else if (fileBrowseEntries.isEmpty()) {
+                                    Text("Папка пуста или нажмите 🔄 для загрузки", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                        fileBrowseEntries.forEach { entry ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)).padding(horizontal = 10.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Text("Открыть ➔", fontSize = 11.sp)
-                                            }
-                                        } else {
-                                            val isDownloading = entry.name in downloadingFiles
-                                            val isDownloaded = entry.name in downloadedFiles
-                                            if (isDownloading) {
-                                                Button(
-                                                    onClick = {},
-                                                    enabled = false,
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text("⏳ Скачивание…", fontSize = 11.sp)
+                                                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Text(if (entry.isDir) "📁" else when {
+                                                        entry.name.endsWith(".jpg", true) || entry.name.endsWith(".png", true) -> "🖼️"
+                                                        entry.name.endsWith(".mp4", true) || entry.name.endsWith(".mkv", true) -> "🎬"
+                                                        entry.name.endsWith(".mp3", true) || entry.name.endsWith(".flac", true) -> "🎵"
+                                                        else -> "📄"
+                                                    }, fontSize = 18.sp)
+                                                    Column {
+                                                        Text(entry.name, fontSize = 13.sp, fontWeight = if (entry.isDir) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        if (!entry.isDir) {
+                                                            val sizeMb = entry.size / (1024.0 * 1024.0)
+                                                            val sizeText = if (sizeMb >= 1.0) String.format(Locale.US, "%.1f МБ", sizeMb) else "${entry.size / 1024} КБ"
+                                                            Text(sizeText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        }
+                                                    }
                                                 }
-                                            } else {
-                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    if (isDownloaded) {
+                                                if (entry.isDir) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            val next = if (fileBrowsePath.endsWith("\\") || fileBrowsePath.endsWith("/")) "$fileBrowsePath${entry.name}" else "$fileBrowsePath\\${entry.name}"
+                                                            browseFiles(next)
+                                                        },
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text("Открыть ➔", fontSize = 11.sp)
+                                                    }
+                                                } else {
+                                                    val isDownloading = entry.name in downloadingFiles
+                                                    val isDownloaded = entry.name in downloadedFiles
+                                                    if (isDownloading) {
                                                         Button(
-                                                            onClick = { openDownloadsFolder() },
-                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                            onClick = {},
+                                                            enabled = false,
                                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                             shape = RoundedCornerShape(8.dp)
                                                         ) {
-                                                            Text("📂 В папку", fontSize = 11.sp, color = Color.White)
+                                                            Text("⏳ Скачивание…", fontSize = 11.sp)
                                                         }
-                                                    }
-                                                    OutlinedButton(
-                                                        onClick = { downloadFileFromPc(entry) },
-                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                        shape = RoundedCornerShape(8.dp)
-                                                    ) {
-                                                        Text(if (isDownloaded) "⬇ Снова" else "⬇ Скачать", fontSize = 11.sp)
+                                                    } else {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            if (isDownloaded) {
+                                                                Button(
+                                                                    onClick = { openDownloadsFolder() },
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                                    shape = RoundedCornerShape(8.dp)
+                                                                ) {
+                                                                    Text("📂 В папку", fontSize = 11.sp, color = Color.White)
+                                                                }
+                                                            }
+                                                            OutlinedButton(
+                                                                onClick = { downloadFileFromPc(entry) },
+                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                                shape = RoundedCornerShape(8.dp)
+                                                            ) {
+                                                                Text(if (isDownloaded) "⬇ Снова" else "⬇ Скачать", fontSize = 11.sp)
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -2061,12 +2081,10 @@ fun PcControlMainApp(
                                 }
                             }
                         }
+                            }
+                        }
                     }
                 }
-            }
-
-            // ==================== 5. ПИТАНИЕ И ЭКРАН ====================
-            if (currentTab == NavTab.POWER) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -2112,11 +2130,11 @@ fun PcControlMainApp(
                         }
 
                         if (disks.isNotEmpty()) {
-                            Text("Накопители:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Накопители (нажмите, чтобы открыть файлы):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 disks.forEach { disk ->
                                     val usedPct = if (disk.totalGb > 0) ((disk.totalGb - disk.freeGb) / disk.totalGb).toFloat().coerceIn(0f, 1f) else 0f
-                                    OutlinedCard(shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
+                                    OutlinedCard(onClick = { showFileBrowser = true; browseFiles(disk.drive.trimEnd('\\', '/') + "\\") }, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
                                         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Text("Диск ${disk.drive}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -2323,6 +2341,7 @@ fun PcControlMainApp(
                                     if (res.success && res.token.isNotBlank()) {
                                         token = res.token
                                         tokenError = false
+                                        if (res.mac.isNotBlank()) mac = res.mac
                                         save()
                                         status = res.message
                                         scope.launch { refresh() }

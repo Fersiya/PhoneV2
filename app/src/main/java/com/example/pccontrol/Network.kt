@@ -567,7 +567,7 @@ suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
             val tok = json.optString("token", "")
             val pc = json.optString("pc", "ПК")
             if (tok.isNotBlank()) {
-                PairResult(true, tok, "Токен успешно получен от $pc ✔")
+                PairResult(true, tok, "Токен и MAC получены от $pc ✔", json.optString("mac", ""))
             } else {
                 PairResult(false, "", "ПК ответил, но токен пустой")
             }
