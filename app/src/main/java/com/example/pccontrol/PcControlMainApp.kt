@@ -216,6 +216,8 @@ fun PcControlMainApp(
     var remoteHost by remember {
         mutableStateOf(prefs.getString("remote_host_$initialActiveId", null) ?: (initialActiveProfile?.host ?: "").takeIf { isRemoteAddress(it) } ?: "")
     }
+    // Необязательный третий путь: адрес ПК в Tailscale (100.x.x.x). Приложение Tailscale просто работает у телефона в фоне.
+    var tsHost by remember { mutableStateOf(prefs.getString("ts_host_$initialActiveId", "") ?: "") }
     var connMode by remember { mutableStateOf(prefs.getString("conn_mode", "auto") ?: "auto") }
     var routeLabel by remember { mutableStateOf("") }
     var mac by remember { mutableStateOf(initialActiveProfile?.mac ?: prefs.getString("mac", "") ?: "") }
@@ -329,6 +331,7 @@ fun PcControlMainApp(
             .putString("mac", mac.trim())
             .putString("lan_host_$activeProfileId", lanHost.trim())
             .putString("remote_host_$activeProfileId", remoteHost.trim())
+            .putString("ts_host_$activeProfileId", tsHost.trim())
             .putString("conn_mode", connMode)
             .putString("active_profile_id", activeProfileId)
             .putFloat("mouse_sens", mouseSensitivity)
@@ -631,7 +634,7 @@ fun PcControlMainApp(
                 if (vpn) sb.appendLine("💡 VPN может не пускать к домашней сети и к trycloudflare.com — попробуйте выключить его.")
             } catch (_: Exception) {
             }
-            for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🌐 Вне дома" to remoteHost.trim())) {
+            for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🔒 Tailscale" to tsHost.trim(), "🌐 Вне дома" to remoteHost.trim())) {
                 if (addr.isBlank()) {
                     sb.appendLine("$name: адрес не задан")
                     continue
@@ -691,6 +694,10 @@ fun PcControlMainApp(
             if (connMode != "lan") {
                 try {
                     val ts = getTunnelStatus(lan, token.trim())
+                    if (ts.tailscale.isNotBlank() && ts.tailscale != tsHost) {
+                        tsHost = ts.tailscale
+                        save()
+                    }
                     if (ts.installed && !ts.running) {
                         toggleTunnel(lan, token.trim(), true)
                     } else if (ts.running && ts.url.isNotBlank() && ts.url != remoteHost) {
@@ -700,6 +707,9 @@ fun PcControlMainApp(
                 } catch (_: Exception) {
                 }
             }
+        } else if (connMode != "lan" && tsHost.isNotBlank() && pingOk(tsHost.trim(), 3000)) {
+            host = tsHost.trim()
+            routeLabel = "🔒 Через Tailscale"
         } else if (connMode != "lan") {
             if (rem.isBlank() || !pingOk(rem, 4000)) {
                 // Берём самый свежий адрес из облака, но если он не отвечает — пробуем предыдущие (ntfy хранит историю)
@@ -795,6 +805,7 @@ fun PcControlMainApp(
                             tokenError = false
                             if (pairRes.mac.isNotBlank()) mac = pairRes.mac
                             if (pairRes.tunnel.startsWith("https://")) remoteHost = pairRes.tunnel
+                            if (pairRes.tailscale.isNotBlank()) tsHost = pairRes.tailscale
                         }
                         save()
                         val tokenNote = if (pairRes.success) " ✔ Токен получен" else " — ${pairRes.message}"
@@ -1197,7 +1208,7 @@ fun PcControlMainApp(
         }
     }
 
-    LaunchedEffect(connMode, lanHost, remoteHost, token, activeProfileId) {
+    LaunchedEffect(connMode, lanHost, remoteHost, tsHost, token, activeProfileId) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             delay(500L)
             while (true) {
@@ -2257,6 +2268,7 @@ fun PcControlMainApp(
                                         mac = prof.mac
                                         lanHost = prefs.getString("lan_host_${prof.id}", null) ?: prof.host.takeIf { isLanAddress(it) } ?: ""
                                         remoteHost = prefs.getString("remote_host_${prof.id}", null) ?: prof.host.takeIf { isRemoteAddress(it) } ?: ""
+                                        tsHost = prefs.getString("ts_host_${prof.id}", "") ?: ""
                                         save()
                                         status = "Выбран профиль: ${prof.name}"
                                         scope.launch { refresh() }
@@ -2336,6 +2348,14 @@ fun PcControlMainApp(
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
+                            value = tsHost,
+                            onValueChange = { tsHost = it },
+                            label = { Text("Tailscale (необязательно, 100.x.x.x)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
                             value = remoteHost,
                             onValueChange = { remoteHost = it },
                             label = { Text("Адрес вне дома (Cloudflare)") },
@@ -2370,6 +2390,7 @@ fun PcControlMainApp(
                                         tokenError = false
                                         if (res.mac.isNotBlank()) mac = res.mac
                                         if (res.tunnel.startsWith("https://")) remoteHost = res.tunnel
+                                        if (res.tailscale.isNotBlank()) tsHost = res.tailscale
                                         save()
                                         status = res.message
                                         scope.launch { refresh() }

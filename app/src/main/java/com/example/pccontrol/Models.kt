@@ -49,5 +49,5 @@ data class PcProfile(
 
 data class UpdateInfo(val available: Boolean, val versionCode: Long, val versionName: String, val hash: String, val size: Long)
 data class OtaCheckResult(val update: UpdateInfo?, val message: String)
-data class PairResult(val success: Boolean, val token: String, val message: String, val mac: String = "", val tunnel: String = "")
-data class TunnelStatus(val running: Boolean, val url: String, val installed: Boolean = true, val message: String = "")
+data class PairResult(val success: Boolean, val token: String, val message: String, val mac: String = "", val tunnel: String = "", val tailscale: String = "")
+data class TunnelStatus(val running: Boolean, val url: String, val installed: Boolean = true, val message: String = "", val tailscale: String = "")

@@ -567,7 +567,7 @@ suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
             val tok = json.optString("token", "")
             val pc = json.optString("pc", "ПК")
             if (tok.isNotBlank()) {
-                PairResult(true, tok, "Токен и MAC получены от $pc ✔", json.optString("mac", ""), json.optString("tunnel", ""))
+                PairResult(true, tok, "Токен и MAC получены от $pc ✔", json.optString("mac", ""), json.optString("tunnel", ""), json.optString("tailscale", ""))
             } else {
                 PairResult(false, "", "ПК ответил, но токен пустой")
             }
@@ -591,7 +591,8 @@ suspend fun getTunnelStatus(host: String, token: String): TunnelStatus = withCon
             TunnelStatus(
                 running = o.optBoolean("running", false),
                 url = o.optString("url", ""),
-                installed = o.optBoolean("installed", false)
+                installed = o.optBoolean("installed", false),
+                tailscale = o.optString("tailscale", "")
             )
         } catch (e: Exception) {
             TunnelStatus(false, "", false, "Ошибка ответа: ${e.message}")
