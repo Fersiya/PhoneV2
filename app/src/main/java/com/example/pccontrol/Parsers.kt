@@ -139,3 +139,29 @@ fun fitNormalized(localX: Float, localY: Float, sw: Float, sh: Float, bw: Int, b
     val oy = (sh - dh) / 2f
     return Pair(((localX - ox) / dw).coerceIn(0f, 1f), ((localY - oy) / dh).coerceIn(0f, 1f))
 }
+
+
+/** Видимая часть экрана ПК при зуме [zoom] с центром (cx, cy): x0, y0, x1, y1 — доли 0..1. */
+fun streamViewport(zoom: Float, cx: Float, cy: Float): FloatArray {
+    val vw = 1f / zoom.coerceIn(1f, 6f)
+    val x0 = (cx - vw / 2f).coerceIn(0f, 1f - vw)
+    val y0 = (cy - vw / 2f).coerceIn(0f, 1f - vw)
+    return floatArrayOf(x0, y0, x0 + vw, y0 + vw)
+}
+
+/**
+ * Как показать кадр, пришедший с областью [f], чтобы на экране была область [v]:
+ * масштаб X, масштаб Y, сдвиг X, сдвиг Y (сдвиг — доли ширины/высоты картинки). Если область кадра
+ * совпала с нужной — это 1,1,0,0, т.е. никакого растяжения и картинка остаётся чёткой.
+ */
+fun streamViewLayer(v: FloatArray, f: FloatArray): FloatArray {
+    val vw = (v[2] - v[0]).coerceAtLeast(0.01f)
+    val vh = (v[3] - v[1]).coerceAtLeast(0.01f)
+    val fw = (f[2] - f[0]).coerceAtLeast(0.01f)
+    val fh = (f[3] - f[1]).coerceAtLeast(0.01f)
+    val sx = fw / vw
+    val sy = fh / vh
+    val tx = -v[0] / vw - 0.5f + (f[0] / fw + 0.5f) * sx
+    val ty = -v[1] / vh - 0.5f + (f[1] / fh + 0.5f) * sy
+    return floatArrayOf(sx, sy, tx, ty)
+}

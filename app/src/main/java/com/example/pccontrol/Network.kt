@@ -72,10 +72,12 @@ suspend fun runMjpegStream(
     width: Int,
     quality: Int,
     allMonitors: Boolean,
-    onFrame: (ImageBitmap, Int, Long) -> Unit
+    view: FloatArray,
+    onFrame: (ImageBitmap, Int, Long, FloatArray) -> Unit
 ) = withContext(Dispatchers.IO) {
     val monParam = if (allMonitors) "all" else "0"
-    val conn = URL(buildPcUrl(host, "/stream?fps=$fps&w=$width&q=$quality&m=$monParam")).openConnection() as HttpURLConnection
+    val viewQ = "&x0=${view[0]}&y0=${view[1]}&x1=${view[2]}&y1=${view[3]}"
+    val conn = URL(buildPcUrl(host, "/stream?fps=$fps&w=$width&q=$quality&m=$monParam$viewQ")).openConnection() as HttpURLConnection
     try {
         conn.requestMethod = "GET"
         conn.connectTimeout = 3000
@@ -104,6 +106,7 @@ suspend fun runMjpegStream(
         // Переиспользуемый буфер байтов кадра и заголовков (Zero GC Allocations для супер-плавности)
         var reusableFrameBuffer = ByteArray(256 * 1024)
         val headerBuf = ByteArray(128)
+        var frameView = floatArrayOf(0f, 0f, 1f, 1f)
 
         while (coroutineContext.isActive) {
             val frameStartMs = System.currentTimeMillis()
@@ -122,6 +125,15 @@ suspend fun runMjpegStream(
                 val effLen = if (lineLen > 0 && headerBuf[lineLen - 1] == 13.toByte()) lineLen - 1 else lineLen // '\r'
                 if (effLen == 0 && contentLength > 0) {
                     break
+                }
+                if (effLen > 8 && (headerBuf[0].toInt() or 0x20) == 'x'.code && headerBuf[1] == '-'.code.toByte() &&
+                    (headerBuf[2].toInt() or 0x20) == 'v'.code
+                ) {
+                    try {
+                        val parts = String(headerBuf, 0, effLen, Charsets.US_ASCII).substringAfter(':').trim().split(',')
+                        if (parts.size == 4) frameView = floatArrayOf(parts[0].toFloat(), parts[1].toFloat(), parts[2].toFloat(), parts[3].toFloat())
+                    } catch (_: Exception) {
+                    }
                 }
                 if (effLen > 15) {
                     val prefix = "content-length:"
@@ -204,8 +216,9 @@ suspend fun runMjpegStream(
                         readNs = 0; decNs = 0; bytesSum = 0; statFrames = 0; lastLogMs = nowMs
                     }
 
+                    val fv = frameView
                     launch(Dispatchers.Main.immediate) {
-                        onFrame(img, calcFps, currentPing)
+                        onFrame(img, calcFps, currentPing, fv)
                     }
                 }
             }

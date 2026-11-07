@@ -278,20 +278,19 @@ fun PcControlMainApp(
 
     // Трансляция экрана
     var isStreamingActive by remember { mutableStateOf(false) }
-    // Пресет качества стрима: 0 = ⚡ 60 FPS Турбо (960p, q=52), 1 = ⚖️ Баланс (1280p, q=62, 45 FPS), 2 = 🔍 FHD 1080p (1920p, q=72, 30 FPS)
-    var streamQualityPreset by remember {
-        mutableIntStateOf(prefs.getInt("stream_quality_preset", 0))
-    }
+    // Один режим трансляции: 960 px, q52, цель 120 к/с (Хост сам ограничит частотой монитора)
     var streamFps by remember { mutableIntStateOf(60) }
-    // «Авто»: уровень подбирается по реальной частоте кадров (0 = 960p/60, 1 = 1280p/45, 2 = 1920p/30)
-    var autoLevel by remember { mutableIntStateOf(1) }
-    var autoCeiling by remember { mutableIntStateOf(2) }
-    val effPreset = if (streamQualityPreset == 3) autoLevel else streamQualityPreset
     var streamAllMonitors by remember { mutableStateOf(false) }
     var directTapMode by remember { mutableStateOf(true) }
     var streamZoom by remember { mutableFloatStateOf(1f) }
-    var streamPanX by remember { mutableFloatStateOf(0f) }
-    var streamPanY by remember { mutableFloatStateOf(0f) }
+    // Центр приближения (доли экрана ПК) и область, которую реально содержит последний кадр
+    var streamCx by remember { mutableFloatStateOf(0.5f) }
+    var streamCy by remember { mutableFloatStateOf(0.5f) }
+    var frameView by remember { mutableStateOf(floatArrayOf(0f, 0f, 1f, 1f)) }
+    fun tapToScreen(u: Float, v: Float): Pair<Float, Float> {
+        val vp = streamViewport(streamZoom, streamCx, streamCy)
+        return Pair(vp[0] + u.coerceIn(0f, 1f) * (vp[2] - vp[0]), vp[1] + v.coerceIn(0f, 1f) * (vp[3] - vp[1]))
+    }
     var streamFhdMode by remember { mutableStateOf(false) }
 
     // Отслеживание скачивания файлов для кнопки "Открыть"
@@ -1134,44 +1133,33 @@ fun PcControlMainApp(
         }
     }
 
-    // Автоподбор качества: проседает частота кадров — понижаем уровень, долго держим цель — повышаем
-    LaunchedEffect(isStreamingActive, streamQualityPreset) {
-        if (streamQualityPreset != 3) return@LaunchedEffect
-        autoCeiling = 2
-        var bad = 0
-        var good = 0
+    // Приближение: сообщаем Хосту, какую часть экрана слать в полном качестве
+    LaunchedEffect(isStreamingActive, host, token) {
+        var sent: FloatArray? = null
         while (isStreamingActive) {
-            delay(1000L)
-            val target = when (autoLevel) { 0 -> 60; 1 -> 45; else -> 30 }
-            val fps = liveStreamFps
-            if (fps <= 0) continue
-            if (fps < target * 0.7) { bad++; good = 0 } else if (fps >= target * 0.93) { good++; bad = 0 } else { bad = 0; good = 0 }
-            if (bad >= 4 && autoLevel > 0) {
-                autoCeiling = autoLevel - 1
-                autoLevel -= 1
-                AppLog.add("авто-качество: ↓ уровень $autoLevel (кадров $fps при цели $target)")
-                bad = 0
-            } else if (good >= 15 && autoLevel < autoCeiling) {
-                autoLevel += 1
-                AppLog.add("авто-качество: ↑ уровень $autoLevel")
-                good = 0
+            delay(70L)
+            val vp = streamViewport(streamZoom, streamCx, streamCy)
+            if (sent == null || !sent.contentEquals(vp)) {
+                try {
+                    http(host.trim(), token.trim(), "/api/view?x0=${vp[0]}&y0=${vp[1]}&x1=${vp[2]}&y1=${vp[3]}", "GET", timeoutMs = 1500)
+                    sent = vp
+                } catch (_: Exception) {
+                }
             }
         }
     }
 
-    LaunchedEffect(isStreamingActive, effPreset, streamFps, streamFhdMode, streamAllMonitors, host, token, currentTab) {
+    LaunchedEffect(isStreamingActive, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val (w, q, targetFps) = when (effPreset) {
-                    0 -> Triple(960, 52, 60)
-                    1 -> Triple(1280, 62, 45)
-                    else -> Triple(1920, 72, 30)
-                }
+                val (w, q, targetFps) = Triple(960, 54, 120)
 
                 var gotFrames = false
                 try {
-                    runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors) { bmp, fpsVal, pingVal ->
+                    runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors,
+                        streamViewport(streamZoom, streamCx, streamCy)) { bmp, fpsVal, pingVal, fv ->
                         screenBitmap = bmp
+                        frameView = fv
                         liveStreamFps = fpsVal
                         liveStreamPing = pingVal
                         pcOnline = true
@@ -1476,46 +1464,19 @@ fun PcControlMainApp(
                                 Text("⏹ Остановить трансляцию", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
 
-                            // Режимы плавности и качества видеопотока
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                listOf(
-                                    Triple(0, "⚡ 60 FPS Турбо", MaterialTheme.colorScheme.primary),
-                                    Triple(1, "⚖️ Баланс", MaterialTheme.colorScheme.secondary),
-                                    Triple(2, "🔍 FHD 1080p", Color(0xFF10B981)),
-                                    Triple(3, "🤖 Авто", Color(0xFFF59E0B))
-                                ).forEach { (presetIdx, labelText, accent) ->
-                                    FilterChip(
-                                        selected = streamQualityPreset == presetIdx,
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            streamQualityPreset = presetIdx
-                                            prefs.edit().putInt("stream_quality_preset", presetIdx).apply()
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = accent.copy(alpha = 0.25f),
-                                            selectedLabelColor = accent
-                                        ),
-                                        label = { Text(labelText, fontWeight = if (streamQualityPreset == presetIdx) FontWeight.Bold else FontWeight.Normal) }
-                                    )
-                                }
-                            }
-
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 CoolButton(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS") {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
                                 }
                                 CoolButton("🔍 ${streamZoom.toInt()}×") {
-                                    streamZoom = when (streamZoom) {
-                                        1f -> 2f
-                                        2f -> 3f
+                                    streamZoom = when {
+                                        streamZoom < 1.5f -> 2f
+                                        streamZoom < 2.5f -> 3f
                                         else -> 1f
                                     }
+                                    streamCx = 0.5f
+                                    streamCy = 0.5f
                                 }
                                 CoolButton(if (streamAllMonitors) "Все экр." else "1 экр.") { streamAllMonitors = !streamAllMonitors }
                                 CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") { directTapMode = !directTapMode }
@@ -1545,14 +1506,12 @@ fun PcControlMainApp(
                                         filterQuality = FilterQuality.Low,
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .graphicsLayer(scaleX = streamZoom, scaleY = streamZoom)
-                                            .pointerInput(host, token, directTapMode, streamAllMonitors, streamZoom) {
+                                            .pointerInput(host, token, directTapMode, streamAllMonitors) {
                                                 detectTapGestures(
                                                     onTap = { offset ->
                                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                         if (directTapMode && size.width > 0 && size.height > 0) {
-                                                            val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                                            val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                                            val (nx, ny) = tapToScreen(offset.x / size.width.toFloat(), offset.y / size.height.toFloat())
                                                             sendMouseAction("abs_click", nx = nx, ny = ny)
                                                         } else {
                                                             sendMouseAction("left")
@@ -1561,8 +1520,7 @@ fun PcControlMainApp(
                                                     onDoubleTap = { offset ->
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         if (directTapMode && size.width > 0 && size.height > 0) {
-                                                            val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                                            val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                                            val (nx, ny) = tapToScreen(offset.x / size.width.toFloat(), offset.y / size.height.toFloat())
                                                             sendMouseAction("abs_double", nx = nx, ny = ny)
                                                         } else {
                                                             sendMouseAction("double")
@@ -1571,8 +1529,7 @@ fun PcControlMainApp(
                                                     onLongPress = { offset ->
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         if (directTapMode && size.width > 0 && size.height > 0) {
-                                                            val nx = (((offset.x / size.width.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
-                                                            val ny = (((offset.y / size.height.toFloat()) - 0.5f) / streamZoom + 0.5f).coerceIn(0f, 1f)
+                                                            val (nx, ny) = tapToScreen(offset.x / size.width.toFloat(), offset.y / size.height.toFloat())
                                                             sendMouseAction("abs_right", nx = nx, ny = ny)
                                                         } else {
                                                             sendMouseAction("right")
@@ -1586,6 +1543,13 @@ fun PcControlMainApp(
                                                     accDx += dragAmount.x * mouseSensitivity
                                                     accDy += dragAmount.y * mouseSensitivity
                                                 }
+                                            }
+                                            .graphicsLayer {
+                                                val lay = streamViewLayer(streamViewport(streamZoom, streamCx, streamCy), frameView)
+                                                scaleX = lay[0]
+                                                scaleY = lay[1]
+                                                translationX = lay[2] * size.width
+                                                translationY = lay[3] * size.height
                                             }
                                     )
                                 } else {
@@ -2547,12 +2511,6 @@ fun PcControlMainApp(
                     filterQuality = FilterQuality.Low,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = streamZoom
-                            scaleY = streamZoom
-                            translationX = streamPanX
-                            translationY = streamPanY
-                        }
                         .pointerInput(isFsMouseMode, host, token) {
                             if (isFsMouseMode) {
                                 detectDragGestures { change, dragAmount ->
@@ -2562,37 +2520,37 @@ fun PcControlMainApp(
                                     accDy += dragAmount.y * mouseSensitivity / streamZoom
                                 }
                             } else {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    if (zoom != 1f) {
-                                        streamZoom = (streamZoom * zoom).coerceIn(1f, 5f)
-                                    }
+                                detectTransformGestures { centroid, pan, zoom, _ ->
                                     val sw = size.width.toFloat()
                                     val sh = size.height.toFloat()
-                                    val maxPanX = (sw * (streamZoom - 1f)) / 2f
-                                    val maxPanY = (sh * (streamZoom - 1f)) / 2f
-                                    if (maxPanX > 0f) {
-                                        streamPanX = (streamPanX + pan.x).coerceIn(-maxPanX, maxPanX)
-                                    } else {
-                                        streamPanX = 0f
-                                    }
-                                    if (maxPanY > 0f) {
-                                        streamPanY = (streamPanY + pan.y).coerceIn(-maxPanY, maxPanY)
-                                    } else {
-                                        streamPanY = 0f
-                                    }
+                                    val bw = currentBmp.width
+                                    val bh = currentBmp.height
+                                    val sc = minOf(sw / bw, sh / bh)
+                                    val dw = bw * sc
+                                    val dh = bh * sc
+                                    val uC = ((centroid.x - (sw - dw) / 2f) / dw).coerceIn(0f, 1f)
+                                    val vC = ((centroid.y - (sh - dh) / 2f) / dh).coerceIn(0f, 1f)
+                                    val old = streamViewport(streamZoom, streamCx, streamCy)
+                                    val ow = old[2] - old[0]
+                                    val px = old[0] + uC * ow
+                                    val py = old[1] + vC * ow
+                                    val nz = (streamZoom * zoom).coerceIn(1f, 6f)
+                                    val nw = 1f / nz
+                                    val nx0 = (px - uC * nw - pan.x / dw * nw).coerceIn(0f, 1f - nw)
+                                    val ny0 = (py - vC * nw - pan.y / dh * nw).coerceIn(0f, 1f - nw)
+                                    streamZoom = nz
+                                    streamCx = nx0 + nw / 2f
+                                    streamCy = ny0 + nw / 2f
                                 }
                             }
                         }
-                        .pointerInput(host, token, streamZoom, streamPanX, streamPanY) {
+                        .pointerInput(host, token) {
                             detectTapGestures(
                                 onTap = { offset ->
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     if (size.width > 0 && size.height > 0) {
-                                        val sw = size.width.toFloat()
-                                        val sh = size.height.toFloat()
-                                        val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
-                                        val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                        val (nx, ny) = fitNormalized(localX, localY, sw, sh, currentBmp.width, currentBmp.height)
+                                        val (fu, fv) = fitNormalized(offset.x, offset.y, size.width.toFloat(), size.height.toFloat(), currentBmp.width, currentBmp.height)
+                                        val (nx, ny) = tapToScreen(fu, fv)
                                         sendMouseAction("abs_click", nx = nx, ny = ny)
                                     } else {
                                         sendMouseAction("left")
@@ -2601,11 +2559,8 @@ fun PcControlMainApp(
                                 onDoubleTap = { offset ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (size.width > 0 && size.height > 0) {
-                                        val sw = size.width.toFloat()
-                                        val sh = size.height.toFloat()
-                                        val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
-                                        val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                        val (nx, ny) = fitNormalized(localX, localY, sw, sh, currentBmp.width, currentBmp.height)
+                                        val (fu, fv) = fitNormalized(offset.x, offset.y, size.width.toFloat(), size.height.toFloat(), currentBmp.width, currentBmp.height)
+                                        val (nx, ny) = tapToScreen(fu, fv)
                                         sendMouseAction("abs_double", nx = nx, ny = ny)
                                     } else {
                                         sendMouseAction("double")
@@ -2614,17 +2569,22 @@ fun PcControlMainApp(
                                 onLongPress = { offset ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (size.width > 0 && size.height > 0) {
-                                        val sw = size.width.toFloat()
-                                        val sh = size.height.toFloat()
-                                        val localX = (offset.x - sw / 2f - streamPanX) / streamZoom + sw / 2f
-                                        val localY = (offset.y - sh / 2f - streamPanY) / streamZoom + sh / 2f
-                                        val (nx, ny) = fitNormalized(localX, localY, sw, sh, currentBmp.width, currentBmp.height)
+                                        val (fu, fv) = fitNormalized(offset.x, offset.y, size.width.toFloat(), size.height.toFloat(), currentBmp.width, currentBmp.height)
+                                        val (nx, ny) = tapToScreen(fu, fv)
                                         sendMouseAction("abs_right", nx = nx, ny = ny)
                                     } else {
                                         sendMouseAction("right")
                                     }
                                 }
                             )
+                        }
+                        .graphicsLayer {
+                            val lay = streamViewLayer(streamViewport(streamZoom, streamCx, streamCy), frameView)
+                            val sc = minOf(size.width / currentBmp.width, size.height / currentBmp.height)
+                            scaleX = lay[0]
+                            scaleY = lay[1]
+                            translationX = lay[2] * currentBmp.width * sc
+                            translationY = lay[3] * currentBmp.height * sc
                         }
                 )
             } else {
@@ -2685,8 +2645,8 @@ fun PcControlMainApp(
                                 HoldScrollButton("⬇") { sendMouseAction("scroll", dy = -3) }
                                 OutlinedButton(onClick = {
                                     streamZoom = 1f
-                                    streamPanX = 0f
-                                    streamPanY = 0f
+                                    streamCx = 0.5f
+                                    streamCy = 0.5f
                                 }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("1×", fontSize = 11.sp) }
                                 OutlinedButton(onClick = {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
