@@ -65,6 +65,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -170,7 +180,14 @@ fun PcControlMainApp(
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             currentTab = tab
                         },
-                        icon = { Text(tab.icon, fontSize = 20.sp) },
+                        icon = {
+                            val iconScale by animateFloatAsState(
+                                if (currentTab == tab) 1.28f else 1f,
+                                spring(dampingRatio = 0.45f, stiffness = 400f),
+                                label = "navIcon"
+                            )
+                            Text(tab.icon, fontSize = 20.sp, modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale))
+                        },
                         label = {
                             Text(
                                 tab.title,
@@ -195,9 +212,20 @@ fun PcControlMainApp(
         ) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                modifier = Modifier.fillMaxWidth()
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+                            )
+                        ),
+                        RoundedCornerShape(16.dp)
+                    )
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
@@ -339,20 +367,25 @@ fun PcControlMainApp(
                 }
             }
 
-            // ==================== 1. ЭКРАН И МЫШЬ ====================
-            if (currentTab == NavTab.SCREEN) ScreenTab(ui)
-
-            // ==================== 2. МЕДИА И YOUTUBE ====================
-            if (currentTab == NavTab.MEDIA) MediaTab(ui)
-
-            // ==================== 4. ОКНА И СОФТ ====================
-            if (currentTab == NavTab.APPS) AppsTab(ui)
-
-            // ==================== 5. ПИТАНИЕ И ЭКРАН ====================
-            if (currentTab == NavTab.POWER) PowerTab(ui)
-
-            // ==================== 6. ОПЦИИ И НАСТРОЙКИ ====================
-            if (currentTab == NavTab.SETTINGS) SettingsTab(ui)
+            // Вкладки: плавная смена с лёгким выездом снизу
+            AnimatedContent(
+                targetState = currentTab,
+                transitionSpec = {
+                    (fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 16 }) togetherWith
+                        fadeOut(tween(110)) using SizeTransform(clip = false)
+                },
+                label = "tabs"
+            ) { tab ->
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    when (tab) {
+                        NavTab.SCREEN -> ScreenTab(ui)
+                        NavTab.MEDIA -> MediaTab(ui)
+                        NavTab.APPS -> AppsTab(ui)
+                        NavTab.POWER -> PowerTab(ui)
+                        NavTab.SETTINGS -> SettingsTab(ui)
+                    }
+                }
+            }
         }
     }
 

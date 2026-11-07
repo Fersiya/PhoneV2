@@ -141,7 +141,7 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             Text("Трансляция экрана", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             if (isStreamingActive && showStreamFpsOverlay) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Box(modifier = Modifier.size(8.dp).background(Color(0xFF10B981), CircleShape))
+                                    PulseDot(Color(0xFF10B981))
                                     Text("Прямой эфир", color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                 }
                             }

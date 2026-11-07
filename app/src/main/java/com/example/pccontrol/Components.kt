@@ -5,7 +5,26 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -57,23 +76,28 @@ fun RowScope.CoolButton(
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         onClick()
     }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.55f, stiffness = 500f), label = "press")
     if (filled) {
         Button(
             onClick = trigger,
+            interactionSource = interaction,
             contentPadding = KeyPadding,
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = accentColor ?: MaterialTheme.colorScheme.primary,
                 contentColor = if (accentColor != null) Color.White else MaterialTheme.colorScheme.onPrimary
             ),
-            modifier = Modifier.weight(weight)
+            modifier = Modifier.weight(weight).scale(pressScale)
         ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     } else {
         OutlinedButton(
             onClick = trigger,
+            interactionSource = interaction,
             contentPadding = KeyPadding,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(weight)
+            modifier = Modifier.weight(weight).scale(pressScale)
         ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp) }
     }
 }
@@ -176,9 +200,24 @@ fun SettingsSection(
                         Text(summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Text(if (expanded) "▲" else "▼", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val arrow by animateFloatAsState(if (expanded) 180f else 0f, tween(260), label = "arrow")
+                Text("▼", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.graphicsLayer(rotationZ = arrow))
             }
-            if (expanded) content()
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(tween(260)) + fadeIn(tween(260)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(160))
+            ) { Column { content() } }
         }
     }
+}
+
+
+/** Мигающая точка «в эфире»: мягко пульсирует, пока идёт трансляция. */
+@Composable
+fun PulseDot(color: Color, size: androidx.compose.ui.unit.Dp = 8.dp) {
+    val t = rememberInfiniteTransition(label = "pulse")
+    val a by t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulseA")
+    val sc by t.animateFloat(0.8f, 1.15f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulseS")
+    Box(modifier = Modifier.size(size).scale(sc).alpha(a).background(color, CircleShape))
 }
