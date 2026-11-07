@@ -279,9 +279,8 @@ fun PcControlMainApp(
     // Трансляция экрана
     var isStreamingActive by remember { mutableStateOf(false) }
     // Один режим трансляции: 960 px, q52, цель 120 к/с (Хост сам ограничит частотой монитора)
-    var streamFps by remember { mutableIntStateOf(60) }
     var streamAllMonitors by remember { mutableStateOf(false) }
-    var directTapMode by remember { mutableStateOf(true) }
+    var directTapMode by remember { mutableStateOf(prefs.getBoolean("direct_tap_mode", true)) }
     var streamZoom by remember { mutableFloatStateOf(1f) }
     // Центр приближения (доли экрана ПК) и область, которую реально содержит последний кадр
     var streamCx by remember { mutableFloatStateOf(0.5f) }
@@ -291,7 +290,6 @@ fun PcControlMainApp(
         val vp = streamViewport(streamZoom, streamCx, streamCy)
         return Pair(vp[0] + u.coerceIn(0f, 1f) * (vp[2] - vp[0]), vp[1] + v.coerceIn(0f, 1f) * (vp[3] - vp[1]))
     }
-    var streamFhdMode by remember { mutableStateOf(false) }
 
     // Отслеживание скачивания файлов для кнопки "Открыть"
     var downloadingFiles by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -1134,6 +1132,14 @@ fun PcControlMainApp(
     }
 
     // Приближение: сообщаем Хосту, какую часть экрана слать в полном качестве
+    // Трансляция стартует сама при открытии приложения (остановить можно кнопкой)
+    LaunchedEffect(Unit) {
+        if (host.isNotBlank() && token.isNotBlank() && prefs.getBoolean("stream_autostart", true)) isStreamingActive = true
+    }
+    LaunchedEffect(isStreamingActive) {
+        if (currentTab == NavTab.SCREEN) prefs.edit().putBoolean("stream_autostart", isStreamingActive).apply()
+    }
+
     LaunchedEffect(isStreamingActive, host, token) {
         var sent: FloatArray? = null
         while (isStreamingActive) {
@@ -1449,7 +1455,7 @@ fun PcControlMainApp(
                                 Text("▶ Запустить трансляцию экрана", fontWeight = FontWeight.Bold)
                             }
                             Text(
-                                "Трансляция выключена (не расходует сеть и заряд батареи)",
+                                "Трансляция выключена (не расходует сеть и заряд батареи). Включённая запускается сама при открытии приложения.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -1479,7 +1485,10 @@ fun PcControlMainApp(
                                     streamCy = 0.5f
                                 }
                                 CoolButton(if (streamAllMonitors) "Все экр." else "1 экр.") { streamAllMonitors = !streamAllMonitors }
-                                CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") { directTapMode = !directTapMode }
+                                CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") {
+                                    directTapMode = !directTapMode
+                                    prefs.edit().putBoolean("direct_tap_mode", directTapMode).apply()
+                                }
                             }
 
                             StreamFrameHost(bitmapProvider = { screenBitmap }) { currentBmp ->
