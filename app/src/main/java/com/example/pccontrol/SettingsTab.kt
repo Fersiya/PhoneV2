@@ -289,7 +289,9 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                             CoolButton("🔒 Блокировка") { requestAddTile(context, PcLockTileService::class.java, "Блокировка ПК") { status = it } }
                             CoolButton("🌙 Экран") { requestAddTile(context, PcScreenOffTileService::class.java, "Экран ПК выкл.") { status = it } }
                         }
-                        CoolButton("🧩 Добавить виджет на рабочий стол", filled = true) { requestPinWidget(context) { status = it } }
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            CoolButton("🧩 Добавить виджет на рабочий стол", filled = true) { requestPinWidget(context) { status = it } }
+                        }
                     }
                 }
 
