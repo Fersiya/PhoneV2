@@ -209,12 +209,9 @@ fun PcControlMainApp(
 
     var host by remember { mutableStateOf(initialActiveProfile?.host ?: prefs.getString("host", "") ?: "") }
     var token by remember { mutableStateOf(initialActiveProfile?.token ?: prefs.getString("token", "") ?: "") }
-    // Два режима подключения: дома (IP в Wi-Fi) и вне дома (Cloudflare-адрес); host — то, что выбрано сейчас
+    // Подключение: дома (IP в Wi-Fi) и вне дома (Tailscale); host — то, что выбрано сейчас
     var lanHost by remember {
         mutableStateOf(prefs.getString("lan_host_$initialActiveId", null) ?: (initialActiveProfile?.host ?: "").takeIf { isLanAddress(it) } ?: "")
-    }
-    var remoteHost by remember {
-        mutableStateOf(prefs.getString("remote_host_$initialActiveId", null) ?: (initialActiveProfile?.host ?: "").takeIf { isRemoteAddress(it) } ?: "")
     }
     // Необязательный третий путь: адрес ПК в Tailscale (100.x.x.x). Приложение Tailscale просто работает у телефона в фоне.
     var tsHost by remember { mutableStateOf(prefs.getString("ts_host_$initialActiveId", "") ?: "") }
@@ -256,8 +253,6 @@ fun PcControlMainApp(
     var ramTotalGb by remember { mutableStateOf(0.0) }
     var ramUsedGb by remember { mutableStateOf(0.0) }
     var disks by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
-    var isTunnelRunning by remember { mutableStateOf(false) }
-    var currentTunnelUrl by remember { mutableStateOf("") }
 
     // Состояние сворачивания карточек в Окна/Софт
     var isProgramsExpanded by remember { mutableStateOf(true) }
@@ -330,7 +325,6 @@ fun PcControlMainApp(
             .putString("token", token.trim())
             .putString("mac", mac.trim())
             .putString("lan_host_$activeProfileId", lanHost.trim())
-            .putString("remote_host_$activeProfileId", remoteHost.trim())
             .putString("ts_host_$activeProfileId", tsHost.trim())
             .putString("conn_mode", connMode)
             .putString("active_profile_id", activeProfileId)
@@ -542,7 +536,7 @@ fun PcControlMainApp(
     var diagnosticsReport by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { AppLog.init(context); AppLog.add("— приложение открыто —") }
     LaunchedEffect(status) { if (status.isNotBlank()) AppLog.add("статус: $status") }
-    LaunchedEffect(routeLabel) { if (routeLabel.isNotBlank()) AppLog.add("маршрут: $routeLabel | host=$host lan=$lanHost remote=$remoteHost режим=$connMode") }
+    LaunchedEffect(routeLabel) { if (routeLabel.isNotBlank()) AppLog.add("маршрут: $routeLabel | host=$host lan=$lanHost ts=$tsHost режим=$connMode") }
     var isDiagnosing by remember { mutableStateOf(false) }
 
     fun runDiagnostics() {
@@ -634,7 +628,7 @@ fun PcControlMainApp(
                 if (vpn) sb.appendLine("💡 VPN может не пускать к домашней сети и к trycloudflare.com — попробуйте выключить его.")
             } catch (_: Exception) {
             }
-            for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🔒 Tailscale" to tsHost.trim(), "🌐 Вне дома" to remoteHost.trim())) {
+            for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🔒 Tailscale" to tsHost.trim())) {
                 if (addr.isBlank()) {
                     sb.appendLine("$name: адрес не задан")
                     continue
@@ -662,75 +656,31 @@ fun PcControlMainApp(
         false
     }
 
-    // Свежий интернет-адрес ПК из облачного канала (его туда кладёт сервер при запуске туннеля)
-    suspend fun fetchRemoteCandidates(): List<String> = withContext(Dispatchers.IO) {
-        if (token.isBlank()) return@withContext emptyList()
-        try {
-            val hashBytes = java.security.MessageDigest.getInstance("SHA-256").digest(token.trim().toByteArray(Charsets.UTF_8))
-            val channelId = "pcremote_" + hashBytes.joinToString("") { "%02x".format(it) }.take(16)
-            val conn = URL("https://ntfy.sh/$channelId/raw?poll=1").openConnection() as HttpURLConnection
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
-            if (conn.responseCode != 200) return@withContext emptyList()
-            val raw = conn.inputStream.bufferedReader().use { it.readText() }
-            raw.lines().map { it.trim() }.filter { it.startsWith("https://") }.reversed().distinct().take(4)
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    suspend fun fetchRemoteFromCloud(): String = fetchRemoteCandidates().firstOrNull() ?: ""
 
     // Выбор маршрута: сначала домашний адрес, если ПК не отвечает — интернет-адрес (Cloudflare)
     suspend fun resolveRoute() {
         if (token.isBlank()) return
         val lan = lanHost.trim()
-        var rem = remoteHost.trim()
         val before = host
-        if (connMode != "remote" && lan.isNotBlank() && pingOk(lan, 1000)) {
+        if (lan.isNotBlank() && pingOk(lan, 1000)) {
             host = lan
             routeLabel = "🏠 Дома (Wi-Fi)"
-            // Дома подстраховываем «вне дома»: поднимаем туннель на ПК и запоминаем его свежий адрес
-            if (connMode != "lan") {
-                try {
-                    val ts = getTunnelStatus(lan, token.trim())
-                    if (ts.tailscale.isNotBlank() && ts.tailscale != tsHost) {
-                        tsHost = ts.tailscale
-                        save()
-                    }
-                    if (ts.installed && !ts.running) {
-                        toggleTunnel(lan, token.trim(), true)
-                    } else if (ts.running && ts.url.isNotBlank() && ts.url != remoteHost) {
-                        remoteHost = ts.url
-                        save()
-                    }
-                } catch (_: Exception) {
+            // Дома запоминаем Tailscale-адрес ПК — он понадобится вне дома
+            try {
+                val ts = getTunnelStatus(lan, token.trim())
+                if (ts.tailscale.isNotBlank() && ts.tailscale != tsHost) {
+                    tsHost = ts.tailscale
+                    save()
                 }
+            } catch (_: Exception) {
             }
         } else if (connMode != "lan" && tsHost.isNotBlank() && pingOk(tsHost.trim(), 3000)) {
             host = tsHost.trim()
             routeLabel = "🔒 Через Tailscale"
         } else if (connMode != "lan") {
-            if (rem.isBlank() || !pingOk(rem, 4000)) {
-                // Берём самый свежий адрес из облака, но если он не отвечает — пробуем предыдущие (ntfy хранит историю)
-                val cands = fetchRemoteCandidates()
-                val alive = cands.firstOrNull { it != rem && pingOk(it, 3500) }
-                val fresh = alive ?: cands.firstOrNull() ?: ""
-                if (cands.isEmpty()) {
-                    status = "Облако (ntfy.sh) не отдало адрес туннеля: нет интернета, сайт заблокирован оператором или ПК ещё не опубликовал адрес"
-                }
-                if (fresh.isNotBlank()) {
-                    rem = fresh
-                    remoteHost = fresh
-                    save()
-                }
-            }
-            if (rem.isNotBlank()) {
-                host = rem
-                routeLabel = "🌐 Через интернет"
-            } else {
-                routeLabel = "⚠️ Адрес вне дома не задан (откройте приложение дома хотя бы раз)"
-            }
+            if (tsHost.isNotBlank()) host = tsHost.trim()
+            routeLabel = if (tsHost.isBlank()) "⚠️ Вне дома нужен Tailscale: откройте приложение дома, а на ПК и телефоне включите Tailscale"
+            else "⚠️ ПК не отвечает по Tailscale — он должен быть включён на телефоне и на ПК"
         } else {
             if (lan.isNotBlank()) host = lan
             routeLabel = "⚠️ ПК не отвечает в Wi-Fi"
@@ -738,41 +688,6 @@ fun PcControlMainApp(
         if (host != before) save()
     }
 
-    fun fetchLatestTunnelUrl() {
-        if (token.isBlank()) {
-            status = "Сначала укажите токен в настройках"
-            return
-        }
-        status = "Получаю интернет-адрес с ПК…"
-        scope.launch(Dispatchers.IO) {
-            try {
-                val digest = java.security.MessageDigest.getInstance("SHA-256")
-                val hashBytes = digest.digest(token.trim().toByteArray(Charsets.UTF_8))
-                val channelId = "pcremote_" + hashBytes.joinToString("") { "%02x".format(it) }.take(16)
-                val conn = URL("https://ntfy.sh/$channelId/raw?poll=1").openConnection() as HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                if (conn.responseCode == 200) {
-                    val raw = conn.inputStream.bufferedReader().use { it.readText() }
-                    val latestUrl = raw.lines().lastOrNull { it.isNotBlank() && (it.startsWith("https://") || it.startsWith("http://")) }?.trim() ?: ""
-                    if (latestUrl.startsWith("https://") || latestUrl.startsWith("http://")) {
-                        withContext(Dispatchers.Main) {
-                            remoteHost = latestUrl
-                            save()
-                            status = "Интернет-адрес ПК обновлён: $latestUrl ✔"
-                            scope.launch { resolveRoute(); refresh() }
-                        }
-                    } else {
-                        withContext(Dispatchers.Main) { status = "ПК пока не передал интернет-адрес" }
-                    }
-                } else {
-                    withContext(Dispatchers.Main) { status = "Сервер не найден в канале" }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) { status = "Ошибка получения: ${e.localizedMessage ?: e.javaClass.simpleName}" }
-            }
-        }
-    }
 
     fun discoverLocalPc() {
         status = "Поиск ПК в локальной сети Wi-Fi…"
@@ -794,7 +709,6 @@ fun PcControlMainApp(
                 if (replyText.startsWith("PC_DISCOVERY_PONG:")) {
                     val parts = replyText.split(":")
                     val pcName = if (parts.size >= 2) parts[1] else "ПК"
-                    val tunnelUrl = if (parts.size >= 3) parts.subList(2, parts.size).joinToString(":") else ""
                     val foundHost = replyPacket.address.hostAddress ?: ""
                     val pairRes = pairWithPc(foundHost)
                     withContext(Dispatchers.Main) {
@@ -804,13 +718,11 @@ fun PcControlMainApp(
                             token = pairRes.token
                             tokenError = false
                             if (pairRes.mac.isNotBlank()) mac = pairRes.mac
-                            if (pairRes.tunnel.startsWith("https://")) remoteHost = pairRes.tunnel
                             if (pairRes.tailscale.isNotBlank()) tsHost = pairRes.tailscale
                         }
                         save()
                         val tokenNote = if (pairRes.success) " ✔ Токен получен" else " — ${pairRes.message}"
-                        val tunnelNote = if (tunnelUrl.isNotBlank()) " (Туннель: $tunnelUrl)" else ""
-                        status = "Найден ПК: $pcName ($foundHost)$tokenNote$tunnelNote"
+                        status = "Найден ПК: $pcName ($foundHost)$tokenNote"
                         scope.launch { refresh() }
                     }
                     found = true
@@ -1208,7 +1120,7 @@ fun PcControlMainApp(
         }
     }
 
-    LaunchedEffect(connMode, lanHost, remoteHost, tsHost, token, activeProfileId) {
+    LaunchedEffect(connMode, lanHost, tsHost, token, activeProfileId) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             delay(500L)
             while (true) {
@@ -2267,7 +2179,6 @@ fun PcControlMainApp(
                                         token = prof.token
                                         mac = prof.mac
                                         lanHost = prefs.getString("lan_host_${prof.id}", null) ?: prof.host.takeIf { isLanAddress(it) } ?: ""
-                                        remoteHost = prefs.getString("remote_host_${prof.id}", null) ?: prof.host.takeIf { isRemoteAddress(it) } ?: ""
                                         tsHost = prefs.getString("ts_host_${prof.id}", "") ?: ""
                                         save()
                                         status = "Выбран профиль: ${prof.name}"
@@ -2283,7 +2194,7 @@ fun PcControlMainApp(
                 SettingsSection(title = "🔌 Подключение", summary = routeLabel.ifBlank { "Не настроено" }, startExpanded = true) {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("auto" to "🔄 Авто", "lan" to "🏠 Дома", "remote" to "🌐 Вне дома").forEach { (mode, title) ->
+                            listOf("auto" to "🔄 Авто", "lan" to "🏠 Дома", "remote" to "🔒 Вне дома").forEach { (mode, title) ->
                                 FilterChip(
                                     selected = connMode == mode,
                                     onClick = { connMode = mode; save() },
@@ -2310,7 +2221,7 @@ fun PcControlMainApp(
                         }
                         OutlinedButton(
                             onClick = {
-                                val info = "режим=$connMode\nhost=$host\nlan=$lanHost\nremote=$remoteHost\nmac=${if (mac.isBlank()) "нет" else mac}\nтокен=${if (token.isBlank()) "нет" else "задан"}\nмаршрут=$routeLabel\nПК онлайн=$pcOnline"
+                                val info = "режим=$connMode\nhost=$host\nlan=$lanHost\nts=$tsHost\nmac=${if (mac.isBlank()) "нет" else mac}\nтокен=${if (token.isBlank()) "нет" else "задан"}\nмаршрут=$routeLabel\nПК онлайн=$pcOnline"
                                 try { AppLog.share(context, info, diagnosticsReport) } catch (e: Exception) { status = "Не удалось собрать отчёт: ${e.message}" }
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -2356,21 +2267,6 @@ fun PcControlMainApp(
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
-                            value = remoteHost,
-                            onValueChange = { remoteHost = it },
-                            label = { Text("Адрес вне дома (Cloudflare)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedButton(
-                            onClick = { fetchLatestTunnelUrl() },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("🔄 Получить интернет-адрес с ПК", fontSize = 12.sp)
-                        }
-                        OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
                             label = { Text("Токен (из окна «Пульт ПК» на компьютере)") },
@@ -2389,7 +2285,6 @@ fun PcControlMainApp(
                                         token = res.token
                                         tokenError = false
                                         if (res.mac.isNotBlank()) mac = res.mac
-                                        if (res.tunnel.startsWith("https://")) remoteHost = res.tunnel
                                         if (res.tailscale.isNotBlank()) tsHost = res.tailscale
                                         save()
                                         status = res.message
@@ -2431,92 +2326,6 @@ fun PcControlMainApp(
                     }
                 }
 
-                SettingsSection(title = "🌐 Интернет-туннель", summary = if (currentTunnelUrl.isNotBlank() || isTunnelRunning) "Включён" else "Выключен") {
-                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val activeTunnelUrl = currentTunnelUrl
-                        val isRunning = activeTunnelUrl.isNotBlank() || isTunnelRunning
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Статус", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(
-                                if (isRunning) "🟢 ВКЛЮЧЕН" else "⚪ ВЫКЛЮЧЕН",
-                                color = if (isRunning) Color(0xFF10B981) else Color.Gray,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                        Text(
-                            "Нужен для управления вне дома. В режиме «Авто» адрес подставляется сам.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        if (activeTunnelUrl.isNotBlank()) {
-                            OutlinedCard(
-                                shape = RoundedCornerShape(10.dp),
-                                colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        text = activeTunnelUrl,
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Button(
-                                            onClick = {
-                                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                clip.setPrimaryClip(ClipData.newPlainText("tunnel_url", activeTunnelUrl))
-                                                status = "Ссылка туннеля скопирована в буфер 📋"
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text("Копировать", fontSize = 12.sp)
-                                        }
-                                        Button(
-                                            onClick = {
-                                                host = activeTunnelUrl
-                                                save()
-                                                status = "Адрес ПК переключен на Cloudflare туннель ✔"
-                                                scope.launch { refresh() }
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text("Использовать", fontSize = 12.sp)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val start = !isRunning
-                                    status = if (start) "Запускаю Cloudflare туннель на ПК…" else "Останавливаю Cloudflare туннель на ПК…"
-                                    val res = toggleTunnel(host.trim(), token.trim(), start)
-                                    isTunnelRunning = res.running
-                                    currentTunnelUrl = res.url
-                                    status = res.message.ifBlank { if (res.running) "Туннель запущен!" else "Туннель выключен" }
-                                    scope.launch { refresh() }
-                                }
-                            },
-                            colors = if (isRunning) ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)) else ButtonDefaults.buttonColors(),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(if (isRunning) "Остановить интернет-туннель 🛑" else "Включить интернет-туннель (4G) 🚀")
-                        }
-                    }
-                }
 
                 SettingsSection(title = "🔄 Обновления", summary = "Версия ${getInstalledVersionName(context)}") {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
