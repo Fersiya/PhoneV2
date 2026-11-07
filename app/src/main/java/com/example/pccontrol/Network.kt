@@ -252,7 +252,7 @@ suspend fun runAudioStream(host: String, token: String, remote: Boolean, onState
         val chMask = if (ch >= 2) android.media.AudioFormat.CHANNEL_OUT_STEREO else android.media.AudioFormat.CHANNEL_OUT_MONO
         val minBuf = android.media.AudioTrack.getMinBufferSize(rate, chMask, android.media.AudioFormat.ENCODING_PCM_16BIT)
         val bytesPerSec = rate * ch * 2
-        val bufSize = maxOf(minBuf, bytesPerSec / 5) // ~200 мс запаса против рывков сети
+        val bufSize = maxOf(minBuf, if (remote) bytesPerSec * 6 / 10 else bytesPerSec * 3 / 10) // запас против рывков сети
         val builder = android.media.AudioTrack.Builder()
             .setAudioAttributes(
                 android.media.AudioAttributes.Builder()
@@ -271,15 +271,23 @@ suspend fun runAudioStream(host: String, token: String, remote: Boolean, onState
             .setTransferMode(android.media.AudioTrack.MODE_STREAM)
         if (android.os.Build.VERSION.SDK_INT >= 26) builder.setPerformanceMode(android.media.AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
         track = builder.build()
-        track.play()
         onState("играет: $rate Гц, ${if (ch >= 2) "стерео" else "моно"}")
         AppLog.add("звук: $rate Гц, каналов $ch, режим $mode")
         val input = conn.inputStream
         val buf = ByteArray(8192)
+        // Сначала набираем половину буфера и только потом запускаем воспроизведение — иначе трески из-за пустого буфера
+        var primed = 0
+        val primeTarget = bufSize / 2
         while (coroutineContext.isActive) {
             val n = input.read(buf)
             if (n < 0) break
-            if (n > 0) track.write(buf, 0, n)
+            if (n > 0) {
+                track.write(buf, 0, n)
+                if (primed < primeTarget) {
+                    primed += n
+                    if (primed >= primeTarget) track.play()
+                }
+            }
         }
         ""
     } catch (e: Exception) {

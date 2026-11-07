@@ -120,6 +120,19 @@ fun isLanAddress(h: String): Boolean {
     return t.isNotEmpty() && t.all { it.isDigit() || it == '.' || it == ':' } && t.contains('.')
 }
 
+/** Адрес Tailscale (100.64.0.0/10) — это тоже IPv4, но канал через интернет, а не домашний Wi-Fi. */
+fun isTailscaleAddress(h: String): Boolean {
+    val t = h.trim().removePrefix("http://").removeSuffix("/").substringBefore(':')
+    val p = t.split('.')
+    if (p.size != 4) return false
+    val a = p[0].toIntOrNull() ?: return false
+    val b = p[1].toIntOrNull() ?: return false
+    return a == 100 && b in 64..127
+}
+
+/** Быстрый домашний канал: адрес локальной сети и не Tailscale. */
+fun isHomeLanAddress(h: String): Boolean = isLanAddress(h) && !isTailscaleAddress(h)
+
 /** Адрес вне дома: ссылка https или доменное имя. */
 fun isRemoteAddress(h: String): Boolean {
     val t = h.trim()

@@ -234,7 +234,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             var fails = 0
             while (isStreamingActive && audioOn && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val err = runAudioStream(host.trim(), token.trim(), !isLanAddress(host.trim())) { audioState = it }
+                val err = runAudioStream(host.trim(), token.trim(), !isHomeLanAddress(host.trim())) { audioState = it }
                 if (err.isNotEmpty()) {
                     audioState = err
                     fails++
@@ -249,7 +249,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
                 // дома — максимум качества; через интернет (Tailscale) канал уже, поэтому кадр легче
-                val (w, q, targetFps) = if (isLanAddress(host.trim())) Triple(960, 54, 120) else Triple(720, 42, 60)
+                val (w, q, targetFps) = if (isHomeLanAddress(host.trim())) Triple(960, 54, 120) else Triple(720, 42, 60)
 
                 var gotFrames = false
                 try {

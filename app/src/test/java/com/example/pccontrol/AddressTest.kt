@@ -32,3 +32,20 @@ class AddressTest {
         assertFalse(isRemoteAddress("  "))
     }
 }
+
+class TailscaleAddressTest {
+    @Test
+    fun tailscaleRange() {
+        assertTrue(isTailscaleAddress("100.126.230.42"))
+        assertTrue(isTailscaleAddress("100.64.0.1:8765"))
+        assertFalse(isTailscaleAddress("100.128.0.1"))
+        assertFalse(isTailscaleAddress("192.168.0.152"))
+    }
+
+    @Test
+    fun homeLan_excludesTailscale() {
+        assertTrue(isHomeLanAddress("192.168.0.152"))
+        assertFalse(isHomeLanAddress("100.126.230.42"))
+        assertFalse(isHomeLanAddress("my.example.com"))
+    }
+}
