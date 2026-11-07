@@ -271,6 +271,8 @@ class PcState(
     // Один режим трансляции: 960 px, q52, цель 120 к/с (Хост сам ограничит частотой монитора)
     var streamAllMonitors by run { mutableStateOf(false) }
     var directTapMode by run { mutableStateOf(prefs.getBoolean("direct_tap_mode", true)) }
+    var audioOn by run { mutableStateOf(prefs.getBoolean("audio_on", false)) }
+    var audioState by run { mutableStateOf("") }
     var streamZoom by run { mutableFloatStateOf(1f) }
     // Центр приближения (доли экрана ПК) и область, которую реально содержит последний кадр
     var streamCx by run { mutableFloatStateOf(0.5f) }

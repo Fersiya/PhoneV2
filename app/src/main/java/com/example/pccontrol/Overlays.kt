@@ -409,6 +409,12 @@ fun FullscreenStream(ui: PcState) {
                                     streamCy = 0.5f
                                 }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("1×", fontSize = 11.sp) }
                                 OutlinedButton(onClick = {
+                                    audioOn = !audioOn
+                                    prefs.edit().putBoolean("audio_on", audioOn).apply()
+                                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) {
+                                    Text(if (audioOn) "🔊" else "🔇", fontSize = 11.sp)
+                                }
+                                OutlinedButton(onClick = {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
                                 }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) {

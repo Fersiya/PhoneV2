@@ -228,6 +228,23 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
         }
     }
 
+    // Звук ПК (только пока идёт трансляция и приложение на экране)
+    LaunchedEffect(isStreamingActive, audioOn, host, token, currentTab) {
+        if (!isStreamingActive || !audioOn || currentTab != NavTab.SCREEN) { audioState = ""; return@LaunchedEffect }
+        activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var fails = 0
+            while (isStreamingActive && audioOn && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
+                val err = runAudioStream(host.trim(), token.trim(), !isLanAddress(host.trim())) { audioState = it }
+                if (err.isNotEmpty()) {
+                    audioState = err
+                    fails++
+                    if (fails >= 3) { audioOn = false; prefs.edit().putBoolean("audio_on", false).apply(); status = err; break }
+                } else fails = 0
+                delay(1000L)
+            }
+        }
+    }
+
     LaunchedEffect(isStreamingActive, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {

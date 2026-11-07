@@ -229,6 +229,69 @@ suspend fun runMjpegStream(
     }
 }
 
+/** Звук ПК: читает PCM 16 бит с Хоста и играет через AudioTrack. Возвращает текст ошибки или "" при обычной остановке. */
+suspend fun runAudioStream(host: String, token: String, remote: Boolean, onState: (String) -> Unit): String = withContext(Dispatchers.IO) {
+    val mode = if (remote) "remote" else "lan"
+    val conn = URL(buildPcUrl(host, "/audio?mode=$mode")).openConnection() as HttpURLConnection
+    var track: android.media.AudioTrack? = null
+    val job = coroutineContext[kotlinx.coroutines.Job]
+    val handle = job?.invokeOnCompletion { try { conn.disconnect() } catch (_: Exception) {} }
+    try {
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 3000
+        conn.readTimeout = 6000
+        val safeToken = if (token.all { it.code in 0x20..0x7E }) token else ""
+        conn.setRequestProperty("X-Token", safeToken)
+        val code = conn.responseCode
+        if (code != 200) {
+            val msg = try { conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+            return@withContext "звук: ошибка $code $msg".trim()
+        }
+        val rate = conn.getHeaderField("X-Audio-Rate")?.toIntOrNull() ?: 48000
+        val ch = conn.getHeaderField("X-Audio-Channels")?.toIntOrNull() ?: 2
+        val chMask = if (ch >= 2) android.media.AudioFormat.CHANNEL_OUT_STEREO else android.media.AudioFormat.CHANNEL_OUT_MONO
+        val minBuf = android.media.AudioTrack.getMinBufferSize(rate, chMask, android.media.AudioFormat.ENCODING_PCM_16BIT)
+        val bytesPerSec = rate * ch * 2
+        val bufSize = maxOf(minBuf, bytesPerSec / 5) // ~200 мс запаса против рывков сети
+        val builder = android.media.AudioTrack.Builder()
+            .setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build()
+            )
+            .setAudioFormat(
+                android.media.AudioFormat.Builder()
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(rate)
+                    .setChannelMask(chMask)
+                    .build()
+            )
+            .setBufferSizeInBytes(bufSize)
+            .setTransferMode(android.media.AudioTrack.MODE_STREAM)
+        if (android.os.Build.VERSION.SDK_INT >= 26) builder.setPerformanceMode(android.media.AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+        track = builder.build()
+        track.play()
+        onState("играет: $rate Гц, ${if (ch >= 2) "стерео" else "моно"}")
+        AppLog.add("звук: $rate Гц, каналов $ch, режим $mode")
+        val input = conn.inputStream
+        val buf = ByteArray(8192)
+        while (coroutineContext.isActive) {
+            val n = input.read(buf)
+            if (n < 0) break
+            if (n > 0) track.write(buf, 0, n)
+        }
+        ""
+    } catch (e: Exception) {
+        if (coroutineContext.isActive) "звук: ${e.javaClass.simpleName}" else ""
+    } finally {
+        handle?.dispose()
+        try { track?.stop() } catch (_: Exception) {}
+        try { track?.release() } catch (_: Exception) {}
+        try { conn.disconnect() } catch (_: Exception) {}
+    }
+}
+
 suspend fun fetchScreenBitmap(
     host: String,
     token: String,

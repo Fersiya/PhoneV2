@@ -186,6 +186,10 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                     streamCx = 0.5f
                                     streamCy = 0.5f
                                 }
+                                CoolButton(if (audioOn) "🔊 Звук" else "🔇 Звук") {
+                                    audioOn = !audioOn
+                                    prefs.edit().putBoolean("audio_on", audioOn).apply()
+                                }
                                 CoolButton(if (streamAllMonitors) "Все экр." else "1 экр.") { streamAllMonitors = !streamAllMonitors }
                                 CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") {
                                     directTapMode = !directTapMode
