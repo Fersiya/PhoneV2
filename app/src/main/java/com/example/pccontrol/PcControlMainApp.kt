@@ -27,6 +27,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -262,7 +263,7 @@ fun PcControlMainApp(
     // Настройки трансляции и полноэкранный режим
     var showStreamFpsOverlay by remember { mutableStateOf(prefs.getBoolean("show_stream_fps_overlay", true)) }
     var isFullscreenStream by remember { mutableStateOf(false) }
-    var isFsControlsVisible by remember { mutableStateOf(true) }
+    var isFsControlsVisible by remember { mutableStateOf(prefs.getBoolean("fs_controls_visible", false)) }
     var isFsMouseMode by remember { mutableStateOf(false) }
 
     // Проводник файлов ПК
@@ -2630,10 +2631,14 @@ fun PcControlMainApp(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    if (isFsControlsVisible) {
+                    AnimatedVisibility(
+                        visible = isFsControlsVisible,
+                        enter = androidx.compose.animation.slideInVertically(initialOffsetY = { it }) + androidx.compose.animation.fadeIn(),
+                        exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }) + androidx.compose.animation.fadeOut()
+                    ) {
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = Color.Black.copy(alpha = 0.75f),
+                            color = Color.Black.copy(alpha = 0.6f),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
                             modifier = Modifier.padding(horizontal = 6.dp)
                         ) {
@@ -2723,15 +2728,32 @@ fun PcControlMainApp(
                         }
                     }
                     Surface(
-                        shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.65f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.Black.copy(alpha = 0.55f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
                         modifier = Modifier
-                            .size(28.dp)
-                            .clickable { isFsControlsVisible = !isFsControlsVisible }
+                            .size(width = 64.dp, height = 24.dp)
+                            .clickable {
+                                isFsControlsVisible = !isFsControlsVisible
+                                prefs.edit().putBoolean("fs_controls_visible", isFsControlsVisible).apply()
+                            }
+                            .pointerInput(Unit) {
+                                var drag = 0f
+                                detectVerticalDragGestures(
+                                    onDragStart = { drag = 0f },
+                                    onVerticalDrag = { _, dy -> drag += dy },
+                                    onDragEnd = {
+                                        val want = if (drag < -30f) true else if (drag > 30f) false else isFsControlsVisible
+                                        if (want != isFsControlsVisible) {
+                                            isFsControlsVisible = want
+                                            prefs.edit().putBoolean("fs_controls_visible", want).apply()
+                                        }
+                                    }
+                                )
+                            }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(if (isFsControlsVisible) "▼" else "▲", color = Color.White, fontSize = 12.sp)
+                            Text(if (isFsControlsVisible) "⌄" else "⌃", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
