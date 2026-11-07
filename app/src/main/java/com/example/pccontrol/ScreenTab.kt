@@ -147,6 +147,17 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             }
                         }
 
+                        AnimatedVisibility(visible = isStreamingActive && streamNote.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFFF59E0B).copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(streamNote, modifier = Modifier.padding(8.dp), fontSize = 12.sp, color = Color(0xFFF59E0B))
+                            }
+                        }
+
                         if (!isStreamingActive) {
                             Button(
                                 onClick = { isStreamingActive = true },

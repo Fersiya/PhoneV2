@@ -247,11 +247,13 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
 
     LaunchedEffect(isStreamingActive, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var fails = 0
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
                 // дома — максимум качества; через интернет (Tailscale) канал уже, поэтому кадр легче
                 val (w, q, targetFps) = if (isHomeLanAddress(host.trim())) Triple(960, 54, 120) else Triple(720, 42, 60)
 
                 var gotFrames = false
+                var errText = ""
                 try {
                     runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors,
                         streamViewport(streamZoom, streamCx, streamCy)) { bmp, fpsVal, pingVal, fv ->
@@ -261,21 +263,33 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
                         liveStreamPing = pingVal
                         pcOnline = true
                         gotFrames = true
+                        fails = 0
+                        if (streamNote.isNotEmpty()) streamNote = ""
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    errText = friendlyNetError(e.localizedMessage ?: e.javaClass.simpleName)
                 }
 
-                if (!gotFrames && isStreamingActive && currentTab == NavTab.SCREEN) {
+                if (!(isStreamingActive && currentTab == NavTab.SCREEN)) break
+                if (!gotFrames) {
+                    fails++
+                    streamNote = "Связь потеряна: ${errText.ifBlank { "нет кадров" }}. Переподключаюсь… ($fails)"
+                    // Может быть, телефон сменил сеть (Wi-Fi ↔ мобильный): пересчитываем маршрут
+                    if (fails == 2 || fails % 5 == 0) {
+                        try { resolveRoute() } catch (_: Exception) {}
+                    }
                     val bmp = fetchScreenBitmap(host.trim(), token.trim(), w, q, streamAllMonitors)
                     if (bmp != null) {
                         screenBitmap = bmp
                         pcOnline = true
                     }
-                    delay(33L)
+                    delay(minOf(300L * fails, 3000L)) // 0.3 → 3 с, не долбим ПК
                 } else {
-                    delay(200L)
+                    streamNote = "Поток прервался. Переподключаюсь…"
+                    delay(300L)
                 }
             }
+            streamNote = ""
         }
     }
 

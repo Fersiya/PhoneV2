@@ -271,6 +271,8 @@ class PcState(
     // Один режим трансляции: 960 px, q52, цель 120 к/с (Хост сам ограничит частотой монитора)
     var streamAllMonitors by run { mutableStateOf(false) }
     var directTapMode by run { mutableStateOf(prefs.getBoolean("direct_tap_mode", true)) }
+    var streamNote by run { mutableStateOf("") }
+    var routeFailStreak = 0
     var audioOn by run { mutableStateOf(prefs.getBoolean("audio_on", false)) }
     var audioState by run { mutableStateOf("") }
     var streamZoom by run { mutableFloatStateOf(1f) }
@@ -396,7 +398,7 @@ class PcState(
             pcOnline = false
             tokenError = false
             apps = emptyList()
-            status = "Сбой подключения: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            status = "Нет связи: ${friendlyNetError(e.localizedMessage ?: e.javaClass.simpleName)}"
         }
     }
 
@@ -641,7 +643,10 @@ class PcState(
         if (token.isBlank()) return
         val lan = lanHost.trim()
         val before = host
-        if (lan.isNotBlank() && pingOk(lan, 1000)) {
+        var lanOk = lan.isNotBlank() && pingOk(lan, 1200)
+        if (!lanOk && lan.isNotBlank() && connMode != "remote") lanOk = pingOk(lan, 1500) // вторая попытка: Wi-Fi иногда «просыпается» не сразу
+        if (lanOk) {
+            routeFailStreak = 0
             host = lan
             routeLabel = "🏠 Дома (Wi-Fi)"
             // Дома запоминаем Tailscale-адрес ПК — он понадобится вне дома
@@ -653,16 +658,23 @@ class PcState(
                 }
             } catch (_: Exception) {
             }
-        } else if (connMode != "lan" && tsHost.isNotBlank() && pingOk(tsHost.trim(), 3000)) {
+        } else if (connMode != "lan" && tsHost.isNotBlank() && (pingOk(tsHost.trim(), 3000) || pingOk(tsHost.trim(), 4000))) {
+            routeFailStreak = 0
             host = tsHost.trim()
             routeLabel = "🔒 Через Tailscale"
-        } else if (connMode != "lan") {
-            if (tsHost.isNotBlank()) host = tsHost.trim()
-            routeLabel = if (tsHost.isBlank()) "⚠️ Вне дома нужен Tailscale: откройте приложение дома, а на ПК и телефоне включите Tailscale"
-            else "⚠️ ПК не отвечает по Tailscale — он должен быть включён на телефоне и на ПК"
         } else {
-            if (lan.isNotBlank()) host = lan
-            routeLabel = "⚠️ ПК не отвечает в Wi-Fi"
+            routeFailStreak++
+            // Одна неудача — не повод бросать рабочий маршрут: предупреждение только после двух подряд
+            if (routeFailStreak >= 2 || routeLabel.isBlank()) {
+                if (connMode != "lan") {
+                    if (tsHost.isNotBlank()) host = tsHost.trim()
+                    routeLabel = if (tsHost.isBlank()) "⚠️ Вне дома нужен Tailscale: откройте приложение дома, а на ПК и телефоне включите Tailscale"
+                    else "⚠️ ПК не отвечает по Tailscale — он должен быть включён на телефоне и на ПК"
+                } else {
+                    if (lan.isNotBlank()) host = lan
+                    routeLabel = "⚠️ ПК не отвечает в Wi-Fi"
+                }
+            }
         }
         if (host != before) save()
     }

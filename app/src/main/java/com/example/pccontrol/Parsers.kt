@@ -178,3 +178,19 @@ fun streamViewLayer(v: FloatArray, f: FloatArray): FloatArray {
     val ty = -v[1] / vh - 0.5f + (f[1] / fh + 0.5f) * sy
     return floatArrayOf(sx, sy, tx, ty)
 }
+
+
+/** Понятный текст вместо технической ошибки сети. */
+fun friendlyNetError(raw: String?): String {
+    val m = (raw ?: "").lowercase()
+    return when {
+        m.isBlank() -> "нет связи с ПК"
+        "failed to connect" in m || "econnrefused" in m || "connection refused" in m -> "ПК не отвечает (выключен, спит или нет сети)"
+        "unexpected end of stream" in m || "connection reset" in m || "software caused connection abort" in m || "broken pipe" in m -> "связь с ПК оборвалась"
+        "timed out" in m || "timeout" in m -> "ПК слишком долго не отвечает"
+        "cancelled" in m || "canceled" in m -> "запрос отменён"
+        "unable to resolve host" in m || "unknownhost" in m -> "не удалось найти адрес ПК"
+        "network is unreachable" in m || "enetunreach" in m -> "нет сети на телефоне"
+        else -> raw ?: "ошибка сети"
+    }
+}
