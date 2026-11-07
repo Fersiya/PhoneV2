@@ -355,7 +355,7 @@ class PcState(
             return
         }
         try {
-            val timeout = if (host.contains("trycloudflare.com") || host.startsWith("https://")) 7500 else 4000
+            val timeout = if (host.startsWith("https://")) 7500 else 4000
             val r = http(host.trim(), token.trim(), "/apps", "GET", timeoutMs = timeout)
             if (r.code == 200) {
                 pcOnline = true
@@ -434,7 +434,7 @@ class PcState(
         if (click) triggerHapticClick()
         val nxStr = String.format(Locale.US, "%.4f", nx)
         val nyStr = String.format(Locale.US, "%.4f", ny)
-        val isTunnel = host.contains("trycloudflare.com") || host.startsWith("https://")
+        val isTunnel = host.startsWith("https://")
 
         if (isTunnel) {
             val payload = JSONObject().apply {
@@ -593,10 +593,6 @@ class PcState(
             } catch (e: Exception) {
                 val elapsed = System.currentTimeMillis() - t0
                 sb.appendLine("❌ СБОЙ ПОДКЛЮЧЕНИЯ (${elapsed} мс): ${e.localizedMessage ?: e.javaClass.simpleName}")
-                if (host.contains("trycloudflare.com")) {
-                    sb.appendLine("💡 Подсказка: возможно, мобильный оператор фильтрует trycloudflare.com.")
-                    sb.appendLine("   Попробуйте подключить телефон к домашнему Wi-Fi и нажать 'Найти ПК в Wi-Fi'.")
-                }
             }
             // Проверка обоих маршрутов и подсказки по сети
             sb.appendLine()
@@ -608,7 +604,7 @@ class PcState(
                 val vpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
                 sb.appendLine("• Сеть телефона: ${if (wifi) "Wi-Fi" else "мобильный интернет"}${if (vpn) " + включён VPN" else ""}")
                 if (!wifi && connMode == "lan") sb.appendLine("💡 Выбран режим «Дома», а Wi-Fi нет — переключите на «Авто».")
-                if (vpn) sb.appendLine("💡 VPN может не пускать к домашней сети и к trycloudflare.com — попробуйте выключить его.")
+                if (vpn) sb.appendLine("💡 VPN может не пускать к домашней сети или к Tailscale — попробуйте выключить его.")
             } catch (_: Exception) {
             }
             for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🔒 Tailscale" to tsHost.trim())) {
@@ -748,7 +744,7 @@ class PcState(
             triggerHapticClick()
         }
 
-        val isTunnel = host.contains("trycloudflare.com") || host.startsWith("https://")
+        val isTunnel = host.startsWith("https://")
         if (!isTunnel) {
             val udpPacketStr = when (action) {
                 "left", "right", "middle", "double" -> "$token:act:$action"

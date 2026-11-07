@@ -24,6 +24,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Модульные тесты
+        run: gradle testDebugUnitTest --no-daemon
+
       - name: Подготовить свой ключ подписи (если секреты заданы)
         env:
           KS_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}

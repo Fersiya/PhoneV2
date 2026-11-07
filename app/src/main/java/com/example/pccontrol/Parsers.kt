@@ -29,7 +29,7 @@ fun buildPcUrl(host: String, pathWithQuery: String): String {
     val path = if (pathWithQuery.startsWith("/")) pathWithQuery else "/$pathWithQuery"
     return when {
         cleanHost.startsWith("http://") || cleanHost.startsWith("https://") -> "$cleanHost$path"
-        cleanHost.contains("trycloudflare.com") || (cleanHost.contains(".") && !cleanHost.all { it.isDigit() || it == '.' || it == ':' }) -> "https://$cleanHost$path"
+        (cleanHost.contains(".") && !cleanHost.all { it.isDigit() || it == '.' || it == ':' }) -> "https://$cleanHost$path"
         else -> if (":" in cleanHost) "http://$cleanHost$path" else "http://$cleanHost:$PORT$path"
     }
 }
@@ -120,7 +120,7 @@ fun isLanAddress(h: String): Boolean {
     return t.isNotEmpty() && t.all { it.isDigit() || it == '.' || it == ':' } && t.contains('.')
 }
 
-/** Адрес вне дома: ссылка https или доменное имя (trycloudflare.com и т.п.). */
+/** Адрес вне дома: ссылка https или доменное имя. */
 fun isRemoteAddress(h: String): Boolean {
     val t = h.trim()
     return t.isNotEmpty() && !isLanAddress(t) && (t.startsWith("https://") || t.contains("."))
