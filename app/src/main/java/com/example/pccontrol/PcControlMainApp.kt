@@ -537,6 +537,9 @@ fun PcControlMainApp(
     }
 
     var diagnosticsReport by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) { AppLog.init(context); AppLog.add("— приложение открыто —") }
+    LaunchedEffect(status) { if (status.isNotBlank()) AppLog.add("статус: $status") }
+    LaunchedEffect(routeLabel) { if (routeLabel.isNotBlank()) AppLog.add("маршрут: $routeLabel | host=$host lan=$lanHost remote=$remoteHost режим=$connMode") }
     var isDiagnosing by remember { mutableStateOf(false) }
 
     fun runDiagnostics() {
@@ -2292,6 +2295,16 @@ fun PcControlMainApp(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(if (isDiagnosing) "⏳ Проверяю связь…" else "🩺 Диагностика связи (Проверить ПК)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val info = "режим=$connMode\nhost=$host\nlan=$lanHost\nremote=$remoteHost\nmac=${if (mac.isBlank()) "нет" else mac}\nтокен=${if (token.isBlank()) "нет" else "задан"}\nмаршрут=$routeLabel\nПК онлайн=$pcOnline"
+                                try { AppLog.share(context, info, diagnosticsReport) } catch (e: Exception) { status = "Не удалось собрать отчёт: ${e.message}" }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("📄 Собрать отчёт и отправить", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                         if (diagnosticsReport.isNotBlank()) {
                             Surface(
