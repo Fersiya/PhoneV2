@@ -54,3 +54,46 @@ object QuickActions {
         }
     }
 }
+
+
+/** Просит систему добавить плитку в шторку (Android 13+). На старых версиях — подсказка, как добавить вручную. */
+fun requestAddTile(context: Context, cls: Class<*>, label: String, onResult: (String) -> Unit) {
+    if (android.os.Build.VERSION.SDK_INT >= 33) {
+        try {
+            val sbm = context.getSystemService(android.app.StatusBarManager::class.java)
+            sbm.requestAddTileService(
+                android.content.ComponentName(context, cls), label,
+                android.graphics.drawable.Icon.createWithResource(context, R.mipmap.ic_launcher),
+                { it.run() }
+            ) { code ->
+                onResult(
+                    when (code) {
+                        android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "Плитка «$label» добавлена ✔"
+                        android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "Плитка «$label» уже в шторке"
+                        android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "Плитка не добавлена"
+                        else -> "Не удалось добавить плитку (код $code)"
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            onResult("Не удалось добавить плитку: ${e.localizedMessage}")
+        }
+    } else {
+        onResult("Потяните шторку вниз → значок карандаша → перетащите «$label» в быстрые настройки")
+    }
+}
+
+/** Просит лаунчер закрепить виджет на рабочем столе. */
+fun requestPinWidget(context: Context, onResult: (String) -> Unit) {
+    try {
+        val mgr = android.appwidget.AppWidgetManager.getInstance(context)
+        if (mgr.isRequestPinAppWidgetSupported) {
+            mgr.requestPinAppWidget(android.content.ComponentName(context, PcWidget::class.java), null, null)
+            onResult("Подтвердите добавление виджета на рабочий стол")
+        } else {
+            onResult("Лаунчер не поддерживает автодобавление: долгое нажатие на рабочем столе → Виджеты → «Пульт ПК»")
+        }
+    } catch (e: Exception) {
+        onResult("Не удалось: ${e.localizedMessage}")
+    }
+}
