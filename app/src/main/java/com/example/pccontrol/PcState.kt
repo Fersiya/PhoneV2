@@ -910,14 +910,30 @@ class PcState(
     }
 
     fun quickAddAppFromWindow(win: WindowItem) {
-        val cleanTitle = win.title.split("-").first().trim().ifEmpty { win.process.replace(".exe", "").replaceFirstChar { it.titlecase() } }
+        val exeName = win.process.removeSuffix(".exe").removeSuffix(".EXE")
+        val lastPart = win.title.split(" - ", " — ").last().trim()
+        val cleanTitle = when {
+            lastPart.isNotEmpty() && lastPart.length <= 24 -> lastPart
+            exeName.isNotEmpty() -> exeName.replaceFirstChar { it.titlecase() }
+            else -> win.title.take(24)
+        }
         val payload = JSONObject().apply {
             put("title", cleanTitle)
             put("launch", win.path.ifEmpty { win.process })
             put("process", win.process)
         }.toString()
         scope.launch {
-            status = command(host.trim(), token.trim(), "/apps/add", "POST", payload)
+            status = try {
+                val r = http(host.trim(), token.trim(), "/apps/add", "POST", payload)
+                when (r.code) {
+                    200 -> "«$cleanTitle» добавлено в Софт ✔"
+                    409 -> "«$cleanTitle» уже есть в Софте"
+                    401 -> "Неверный токен"
+                    else -> "Не удалось добавить: ${r.body.ifBlank { "ошибка ${r.code}" }}"
+                }
+            } catch (e: Exception) {
+                "ПК недоступен (${e.javaClass.simpleName})"
+            }
             delay(300)
             refresh()
         }
