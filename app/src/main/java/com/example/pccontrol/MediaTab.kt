@@ -127,7 +127,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ColumnScope.MediaTab(ui: PcState) {
     with(ui) {
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(0)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("YouTube и ссылки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Row(
@@ -155,7 +155,7 @@ fun ColumnScope.MediaTab(ui: PcState) {
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(70)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val vol = volumeSlider.roundToInt()
                         val volIcon = when {
@@ -201,7 +201,7 @@ fun ColumnScope.MediaTab(ui: PcState) {
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(140)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Пульт плеера и YouTube", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 

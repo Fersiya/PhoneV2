@@ -132,7 +132,7 @@ fun ColumnScope.PowerTab(ui: PcState) {
                         Surface(modifier = Modifier.fillMaxSize().padding(8.dp), shape = RoundedCornerShape(20.dp)) {
                             Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(onClick = { showFileBrowser = false }) { Text("✕ Закрыть") }
-                        OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(0)) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Text("Файлы ПК 📁", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -240,7 +240,7 @@ fun ColumnScope.PowerTab(ui: PcState) {
                         }
                     }
                 }
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(70)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Мониторинг ПК 📊", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -340,33 +340,20 @@ fun ColumnScope.PowerTab(ui: PcState) {
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(140)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Управление питанием", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-                        Button(
-                            onClick = { wake() },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().height(48.dp)
-                        ) {
-                            Text("Включить ПК (Wake-on-LAN)", fontWeight = FontWeight.Bold)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ActionTile("⚡", "Включить\n(Wake-on-LAN)", Color(0xFF10B981)) { wake() }
+                            ActionTile("💤", "Сон", Color(0xFF7C3AED)) { pending = "/sleep" to "Перевести ПК в режим сна" }
+                            ActionTile("🌙", "Экран\nвыкл.", Color(0xFF0EA5E9)) { run("/monitor_off", refreshAfter = false) }
                         }
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CoolButton("Выключить", accentColor = Color(0xFFDC2626), filled = true) {
-                                pending = "/shutdown" to "Выключить ПК"
-                            }
-                            CoolButton("Сон 💤", accentColor = Color(0xFF7C3AED), filled = true) {
-                                pending = "/sleep" to "Перевести ПК в режим сна"
-                            }
-                            CoolButton("Рестарт") {
-                                pending = "/restart" to "Перезагрузить ПК"
-                            }
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CoolButton("🌙 Экран выкл.") { run("/monitor_off", refreshAfter = false) }
-                            CoolButton("🔒 Блокировка") { run("/lock", refreshAfter = false) }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ActionTile("🔒", "Блокировка", Color(0xFFF59E0B)) { run("/lock", refreshAfter = false) }
+                            ActionTile("🔄", "Рестарт", Color(0xFF6366F1)) { pending = "/restart" to "Перезагрузить ПК" }
+                            ActionTile("⏻", "Выключить", Color(0xFFDC2626)) { pending = "/shutdown" to "Выключить ПК" }
                         }
                     }
                 }

@@ -204,7 +204,13 @@ fun FullscreenStream(ui: PcState) {
         }
     }
 
-    if (isFullscreenStream) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = isFullscreenStream,
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260)) +
+            androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(300), initialScale = 0.92f),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)) +
+            androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(200), targetScale = 0.95f)
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()

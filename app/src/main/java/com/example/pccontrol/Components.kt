@@ -22,6 +22,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -220,4 +221,52 @@ fun PulseDot(color: Color, size: androidx.compose.ui.unit.Dp = 8.dp) {
     val a by t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulseA")
     val sc by t.animateFloat(0.8f, 1.15f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulseS")
     Box(modifier = Modifier.size(size).scale(sc).alpha(a).background(color, CircleShape))
+}
+
+
+/** Плавное появление карточки при первом показе: прозрачность + лёгкий выезд снизу. */
+fun Modifier.appear(delayMs: Int = 0): Modifier = composed {
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { progress.animateTo(1f, tween(380, delayMillis = delayMs)) }
+    this.graphicsLayer {
+        alpha = progress.value
+        translationY = (1f - progress.value) * 28.dp.toPx()
+    }
+}
+
+/** Крупная плитка действия (иконка + подпись) для питания и быстрых команд. */
+@Composable
+fun RowScope.ActionTile(
+    icon: String,
+    label: String,
+    tint: Color,
+    weight: Float = 1f,
+    onClick: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val sc by animateFloatAsState(if (pressed) 0.92f else 1f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "tile")
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = tint.copy(alpha = if (pressed) 0.34f else 0.18f),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.55f)),
+        modifier = Modifier
+            .weight(weight)
+            .scale(sc)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(interactionSource = interaction, indication = null) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 14.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(icon, fontSize = 28.sp)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+        }
+    }
 }

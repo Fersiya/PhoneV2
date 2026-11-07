@@ -127,7 +127,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ColumnScope.SettingsTab(ui: PcState) {
     with(ui) {
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(0)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Компьютеры (Профили)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

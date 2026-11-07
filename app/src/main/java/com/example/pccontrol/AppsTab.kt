@@ -127,7 +127,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ColumnScope.AppsTab(ui: PcState) {
     with(ui) {
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(0)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { isProgramsExpanded = !isProgramsExpanded },
@@ -169,7 +169,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                     }
                 }
 
-                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(70)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { isWindowsExpanded = !isWindowsExpanded },
