@@ -95,6 +95,11 @@ suspend fun runMjpegStream(
         var frameCount = 0
         var lastFpsTime = System.currentTimeMillis()
         var calcFps = fps
+        var readNs = 0L
+        var decNs = 0L
+        var bytesSum = 0L
+        var statFrames = 0
+        var lastLogMs = System.currentTimeMillis()
 
         // Переиспользуемый буфер байтов кадра и заголовков (Zero GC Allocations для супер-плавности)
         var reusableFrameBuffer = ByteArray(256 * 1024)
@@ -151,6 +156,7 @@ suspend fun runMjpegStream(
                 reusableFrameBuffer = ByteArray(maxOf(contentLength + 32768, reusableFrameBuffer.size * 2))
             }
 
+            val rd0 = System.nanoTime()
             var readTotal = 0
             while (readTotal < contentLength && coroutineContext.isActive) {
                 val r = stream.read(reusableFrameBuffer, readTotal, contentLength - readTotal)
@@ -166,6 +172,8 @@ suspend fun runMjpegStream(
                     skip++
                 }
 
+                readNs += System.nanoTime() - rd0
+                val dc0 = System.nanoTime()
                 opts.inBitmap = if (useBufferA) bufferA else bufferB
                 val bmp = try {
                     BitmapFactory.decodeByteArray(reusableFrameBuffer, 0, contentLength, opts)
@@ -174,6 +182,9 @@ suspend fun runMjpegStream(
                     BitmapFactory.decodeByteArray(reusableFrameBuffer, 0, contentLength, opts)
                 }
 
+                decNs += System.nanoTime() - dc0
+                bytesSum += contentLength
+                statFrames++
                 if (bmp != null) {
                     if (useBufferA) bufferA = bmp else bufferB = bmp
                     useBufferA = !useBufferA
@@ -187,6 +198,11 @@ suspend fun runMjpegStream(
                         lastFpsTime = nowMs
                     }
                     val currentPing = nowMs - frameStartMs
+                    if (nowMs - lastLogMs >= 10000 && statFrames > 0) {
+                        AppLog.add("поток: цель $fps к/с, получено $calcFps к/с, кадр ${bytesSum / statFrames / 1024} КБ, " +
+                            "чтение ${readNs / statFrames / 1_000_000} мс, декод ${decNs / statFrames / 1_000_000} мс на кадр")
+                        readNs = 0; decNs = 0; bytesSum = 0; statFrames = 0; lastLogMs = nowMs
+                    }
 
                     launch(Dispatchers.Main.immediate) {
                         onFrame(img, calcFps, currentPing)

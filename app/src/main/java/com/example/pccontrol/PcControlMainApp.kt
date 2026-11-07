@@ -283,6 +283,10 @@ fun PcControlMainApp(
         mutableIntStateOf(prefs.getInt("stream_quality_preset", 0))
     }
     var streamFps by remember { mutableIntStateOf(60) }
+    // «Авто»: уровень подбирается по реальной частоте кадров (0 = 960p/60, 1 = 1280p/45, 2 = 1920p/30)
+    var autoLevel by remember { mutableIntStateOf(1) }
+    var autoCeiling by remember { mutableIntStateOf(2) }
+    val effPreset = if (streamQualityPreset == 3) autoLevel else streamQualityPreset
     var streamAllMonitors by remember { mutableStateOf(false) }
     var directTapMode by remember { mutableStateOf(true) }
     var streamZoom by remember { mutableFloatStateOf(1f) }
@@ -1130,10 +1134,35 @@ fun PcControlMainApp(
         }
     }
 
-    LaunchedEffect(isStreamingActive, streamQualityPreset, streamFps, streamFhdMode, streamAllMonitors, host, token, currentTab) {
+    // Автоподбор качества: проседает частота кадров — понижаем уровень, долго держим цель — повышаем
+    LaunchedEffect(isStreamingActive, streamQualityPreset) {
+        if (streamQualityPreset != 3) return@LaunchedEffect
+        autoCeiling = 2
+        var bad = 0
+        var good = 0
+        while (isStreamingActive) {
+            delay(1000L)
+            val target = when (autoLevel) { 0 -> 60; 1 -> 45; else -> 30 }
+            val fps = liveStreamFps
+            if (fps <= 0) continue
+            if (fps < target * 0.7) { bad++; good = 0 } else if (fps >= target * 0.93) { good++; bad = 0 } else { bad = 0; good = 0 }
+            if (bad >= 4 && autoLevel > 0) {
+                autoCeiling = autoLevel - 1
+                autoLevel -= 1
+                AppLog.add("авто-качество: ↓ уровень $autoLevel (кадров $fps при цели $target)")
+                bad = 0
+            } else if (good >= 15 && autoLevel < autoCeiling) {
+                autoLevel += 1
+                AppLog.add("авто-качество: ↑ уровень $autoLevel")
+                good = 0
+            }
+        }
+    }
+
+    LaunchedEffect(isStreamingActive, effPreset, streamFps, streamFhdMode, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val (w, q, targetFps) = when (streamQualityPreset) {
+                val (w, q, targetFps) = when (effPreset) {
                     0 -> Triple(960, 52, 60)
                     1 -> Triple(1280, 62, 45)
                     else -> Triple(1920, 72, 30)
@@ -1456,7 +1485,8 @@ fun PcControlMainApp(
                                 listOf(
                                     Triple(0, "⚡ 60 FPS Турбо", MaterialTheme.colorScheme.primary),
                                     Triple(1, "⚖️ Баланс", MaterialTheme.colorScheme.secondary),
-                                    Triple(2, "🔍 FHD 1080p", Color(0xFF10B981))
+                                    Triple(2, "🔍 FHD 1080p", Color(0xFF10B981)),
+                                    Triple(3, "🤖 Авто", Color(0xFFF59E0B))
                                 ).forEach { (presetIdx, labelText, accent) ->
                                     FilterChip(
                                         selected = streamQualityPreset == presetIdx,
