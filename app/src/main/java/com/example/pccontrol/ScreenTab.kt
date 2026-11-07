@@ -1,5 +1,6 @@
 package com.example.pccontrol
 
+import androidx.compose.foundation.layout.ColumnScope
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
