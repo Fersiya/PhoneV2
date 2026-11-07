@@ -231,7 +231,8 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
     LaunchedEffect(isStreamingActive, streamAllMonitors, host, token, currentTab) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
-                val (w, q, targetFps) = Triple(960, 54, 120)
+                // дома — максимум качества; через интернет (Tailscale) канал уже, поэтому кадр легче
+                val (w, q, targetFps) = if (isLanAddress(host.trim())) Triple(960, 54, 120) else Triple(720, 42, 60)
 
                 var gotFrames = false
                 try {
