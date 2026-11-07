@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -261,7 +262,7 @@ fun PcControlMainApp(
     // Настройки трансляции и полноэкранный режим
     var showStreamFpsOverlay by remember { mutableStateOf(prefs.getBoolean("show_stream_fps_overlay", true)) }
     var isFullscreenStream by remember { mutableStateOf(false) }
-    var isFsControlsVisible by remember { mutableStateOf(false) }
+    var isFsControlsVisible by remember { mutableStateOf(true) }
     var isFsMouseMode by remember { mutableStateOf(false) }
 
     // Проводник файлов ПК
@@ -2622,6 +2623,7 @@ fun PcControlMainApp(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .imePadding()
                     .padding(bottom = 12.dp)
             ) {
                 Column(
@@ -2635,6 +2637,53 @@ fun PcControlMainApp(
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
                             modifier = Modifier.padding(horizontal = 6.dp)
                         ) {
+                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedTextField(
+                                        value = textToType,
+                                        onValueChange = { textToType = it },
+                                        placeholder = { Text("Печать на ПК", fontSize = 12.sp) },
+                                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Color.White),
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                                    )
+                                    OutlinedButton(
+                                        onClick = { sendTypeText(enter = true) },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) { Text("↵", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                                }
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    listOf(
+                                        "Esc" to "/media/key_esc", "Win+D" to "/media/win_d", "Ctrl+C" to "/media/ctrl_c",
+                                        "Ctrl+V" to "/media/ctrl_v", "Ctrl+Z" to "/media/ctrl_z", "Alt+F4" to "/media/alt_f4",
+                                        "Диспетчер" to "/media/task_mgr"
+                                    ).forEach { (label, path) ->
+                                        OutlinedButton(
+                                            onClick = { run(path, refreshAfter = false) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) { Text(label, fontSize = 11.sp) }
+                                    }
+                                    OutlinedButton(
+                                        onClick = { sendPhoneClipboardToPc() },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) { Text("📋→ПК", fontSize = 11.sp) }
+                                    OutlinedButton(
+                                        onClick = { captureScreenshotToPhone() },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) { Text("📸", fontSize = 11.sp) }
+                                }
                             Row(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2669,6 +2718,7 @@ fun PcControlMainApp(
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252))
                                 ) { Text("✕", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                            }
                             }
                         }
                     }
