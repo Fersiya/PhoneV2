@@ -90,7 +90,7 @@ fun RowScope.CoolButton(
                 containerColor = accentColor ?: MaterialTheme.colorScheme.primary,
                 contentColor = if (accentColor != null) Color.White else MaterialTheme.colorScheme.onPrimary
             ),
-            modifier = Modifier.weight(weight).scale(pressScale)
+            modifier = Modifier.weight(weight).height(48.dp).scale(pressScale)
         ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     } else {
         OutlinedButton(
@@ -98,7 +98,7 @@ fun RowScope.CoolButton(
             interactionSource = interaction,
             contentPadding = KeyPadding,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(weight).scale(pressScale)
+            modifier = Modifier.weight(weight).height(48.dp).scale(pressScale)
         ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp) }
     }
 }
@@ -128,6 +128,7 @@ fun RowScope.HoldScrollButton(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
         modifier = Modifier
             .weight(weight)
+            .height(48.dp)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -142,8 +143,8 @@ fun RowScope.HoldScrollButton(
                 )
             }
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
-            Text(text, textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Medium)
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Medium)
         }
     }
 }

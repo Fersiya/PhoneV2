@@ -201,7 +201,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(win.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(win.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                             Text(
                                                 if (win.active) "${win.process} • активно" else win.process,
                                                 style = MaterialTheme.typography.bodySmall,
@@ -209,7 +209,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                                             )
                                         }
                                         Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Экран") }
-                                        OutlinedButton(onClick = { quickAddAppFromWindow(win) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("+ В софт") }
+                                        OutlinedButton(onClick = { quickAddAppFromWindow(win) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("＋") }
                                         OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
                                     }
                                 }

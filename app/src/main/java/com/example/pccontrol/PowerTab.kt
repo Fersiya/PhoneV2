@@ -291,10 +291,8 @@ fun ColumnScope.PowerTab(ui: PcState) {
                                     val usedPct = if (disk.totalGb > 0) ((disk.totalGb - disk.freeGb) / disk.totalGb).toFloat().coerceIn(0f, 1f) else 0f
                                     OutlinedCard(onClick = { showFileBrowser = true; browseFiles(disk.drive.trimEnd('\\', '/') + "\\") }, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
                                         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                Text("Диск ${disk.drive}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                                Text("${disk.freeGb} ГБ своб.", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                            }
+                                            Text("Диск ${disk.drive}", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                                            Text("${disk.freeGb} ГБ свободно", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                                             LinearProgressIndicator(
                                                 progress = { usedPct },
                                                 modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
@@ -353,7 +351,7 @@ fun ColumnScope.PowerTab(ui: PcState) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             ActionTile("🔒", "Блокировка", Color(0xFFF59E0B)) { run("/lock", refreshAfter = false) }
                             ActionTile("🔄", "Рестарт", Color(0xFF6366F1)) { pending = "/restart" to "Перезагрузить ПК" }
-                            ActionTile("⏻", "Выключить", Color(0xFFDC2626)) { pending = "/shutdown" to "Выключить ПК" }
+                            ActionTile("⛔", "Выключить", Color(0xFFDC2626)) { pending = "/shutdown" to "Выключить ПК" }
                         }
                     }
                 }

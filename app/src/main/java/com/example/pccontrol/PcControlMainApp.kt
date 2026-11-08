@@ -245,7 +245,7 @@ fun PcControlMainApp(
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                         ) {
                             Text(
-                                "v6.1",
+                                "v${appVersionName(context)}",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -281,6 +281,13 @@ fun PcControlMainApp(
                 }
             }
 
+            // Сообщение само пропадает через 8 секунд, если не менялось (ошибки остаются дольше)
+            LaunchedEffect(status) {
+                if (status.isNotEmpty()) {
+                    kotlinx.coroutines.delay(if (status.contains("Ошибка") || status.contains("Сбой") || status.contains("Нет связи")) 20000L else 8000L)
+                    status = ""
+                }
+            }
             if (status.isNotEmpty()) {
                 // Долгое нажатие копирует сообщение целиком (удобно отправить текст ошибки)
                 Text(
