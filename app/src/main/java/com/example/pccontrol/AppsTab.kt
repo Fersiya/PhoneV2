@@ -145,6 +145,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                                 if (apps.isEmpty()) {
                                     Text("Список программ пуст. Добавьте из списка открытых окон ниже.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
+                                DetectedAppsButton(ui)
                                 apps.forEach { app ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
