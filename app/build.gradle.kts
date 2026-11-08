@@ -14,7 +14,7 @@ android {
         targetSdk = 35
         // В CI версия растёт сама (номер запуска), локально остаётся 33
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 100 + it } ?: 33
-        versionName = "6.0"
+        versionName = "6.2"
     }
 
     // Общий debug-ключ из репозитория убран: без файла Gradle берёт обычный локальный debug-ключ
