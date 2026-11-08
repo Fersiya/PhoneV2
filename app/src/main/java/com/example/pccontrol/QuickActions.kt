@@ -83,17 +83,3 @@ fun requestAddTile(context: Context, cls: Class<*>, label: String, onResult: (St
     }
 }
 
-/** Просит лаунчер закрепить виджет на рабочем столе. */
-fun requestPinWidget(context: Context, onResult: (String) -> Unit) {
-    try {
-        val mgr = android.appwidget.AppWidgetManager.getInstance(context)
-        if (mgr.isRequestPinAppWidgetSupported) {
-            mgr.requestPinAppWidget(android.content.ComponentName(context, PcWidget::class.java), null, null)
-            onResult("Подтвердите добавление виджета на рабочий стол")
-        } else {
-            onResult("Лаунчер не поддерживает автодобавление: долгое нажатие на рабочем столе → Виджеты → «Пульт ПК»")
-        }
-    } catch (e: Exception) {
-        onResult("Не удалось: ${e.localizedMessage}")
-    }
-}
