@@ -245,7 +245,7 @@ fun PcControlMainApp(
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                         ) {
                             Text(
-                                "v${appVersionName(context)}",
+                                "v${getInstalledVersionName(context)}",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
