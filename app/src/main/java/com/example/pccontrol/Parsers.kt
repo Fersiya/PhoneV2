@@ -19,7 +19,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "6.4"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "6.5"
     } catch (_: Exception) {
         "0.0"
     }
@@ -194,3 +194,8 @@ fun friendlyNetError(raw: String?): String {
         else -> raw ?: "ошибка сети"
     }
 }
+
+/** Размер в МБ (или КБ для маленьких файлов) для строки прогресса. */
+fun formatMb(bytes: Long): String =
+    if (bytes >= 1024 * 1024) String.format(java.util.Locale.US, "%.1f МБ", bytes / 1048576.0)
+    else String.format(java.util.Locale.US, "%d КБ", bytes / 1024)

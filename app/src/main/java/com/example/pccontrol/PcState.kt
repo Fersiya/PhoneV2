@@ -287,6 +287,8 @@ class PcState(
 
     // Отслеживание скачивания файлов для кнопки "Открыть"
     var downloadingFiles by run { mutableStateOf<Set<String>>(emptySet()) }
+    /** Прогресс скачивания: имя файла → (скачано байт, всего байт; всего 0 = неизвестно). */
+    var downloadProgress by run { mutableStateOf<Map<String, Pair<Long, Long>>>(emptyMap()) }
     var downloadedFiles by run { mutableStateOf<Map<String, Uri>>(emptyMap()) }
     var screenBitmap by run { mutableStateOf<ImageBitmap?>(null) }
 
@@ -1001,6 +1003,26 @@ class PcState(
         }
     }
 
+    /** Копирует поток и обновляет downloadProgress (не чаще раза в ~100 мс). */
+    private fun copyWithProgress(input: java.io.InputStream, output: java.io.OutputStream, total: Long, name: String) {
+        val buf = ByteArray(64 * 1024)
+        var done = 0L
+        var lastUi = 0L
+        downloadProgress = downloadProgress + (name to (0L to maxOf(total, 0L)))
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            output.write(buf, 0, n)
+            done += n
+            val now = System.currentTimeMillis()
+            if (now - lastUi >= 100) {
+                lastUi = now
+                downloadProgress = downloadProgress + (name to (done to maxOf(total, 0L)))
+            }
+        }
+        downloadProgress = downloadProgress + (name to (done to maxOf(total, done)))
+    }
+
     fun downloadFileFromPc(entry: FileEntry) {
         if (host.isBlank() || token.isBlank()) return
         downloadingFiles = downloadingFiles + entry.name
@@ -1030,7 +1052,7 @@ class PcState(
                             if (uri != null) {
                                 try {
                                     resolver.openOutputStream(uri)?.use { output ->
-                                        conn.inputStream.use { input -> input.copyTo(output) }
+                                        conn.inputStream.use { input -> copyWithProgress(input, output, conn.contentLengthLong, entry.name) }
                                     }
                                     values.clear()
                                     values.put(MediaStore.Downloads.IS_PENDING, 0)
@@ -1046,7 +1068,7 @@ class PcState(
                             downloadDir.mkdirs()
                             val destFile = File(downloadDir, entry.name)
                             conn.inputStream.use { input ->
-                                FileOutputStream(destFile).use { output -> input.copyTo(output) }
+                                FileOutputStream(destFile).use { output -> copyWithProgress(input, output, conn.contentLengthLong, entry.name) }
                             }
                             savedOk = true
                             savedUri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
@@ -1062,6 +1084,7 @@ class PcState(
                 }
             }
             downloadingFiles = downloadingFiles - entry.name
+            downloadProgress = downloadProgress - entry.name
             if (savedUri != null) {
                 downloadedFiles = downloadedFiles + (entry.name to savedUri!!)
             }

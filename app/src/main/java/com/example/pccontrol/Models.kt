@@ -12,7 +12,7 @@ enum class NavTab(val title: String, val icon: String) {
     SCREEN("Экран", "🖥️"),
     TOUCHPAD("Тачпад", "👆"),
     MEDIA("Медиа", "🎵"),
-    APPS("Окна/Софт", "🪟"),
+    APPS("Окна", "🪟"),
     POWER("Питание", "⚡"),
     SETTINGS("Опции", "⚙️")
 }

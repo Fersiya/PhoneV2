@@ -200,13 +200,26 @@ fun ColumnScope.PowerTab(ui: PcState) {
                                                     val isDownloading = entry.name in downloadingFiles
                                                     val isDownloaded = entry.name in downloadedFiles
                                                     if (isDownloading) {
-                                                        Button(
-                                                            onClick = {},
-                                                            enabled = false,
-                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                            shape = RoundedCornerShape(8.dp)
-                                                        ) {
-                                                            Text("⏳ Скачивание…", fontSize = 11.sp)
+                                                        val (got, total) = downloadProgress[entry.name] ?: (0L to 0L)
+                                                        val frac = if (total > 0) (got.toFloat() / total).coerceIn(0f, 1f) else 0f
+                                                        Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(112.dp)) {
+                                                            Text(
+                                                                if (total > 0) "${(frac * 100).toInt()}% · ${formatMb(got)}/${formatMb(total)}" else "⏳ ${formatMb(got)}",
+                                                                fontSize = 11.sp,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                            if (total > 0) {
+                                                                LinearProgressIndicator(
+                                                                    progress = { frac },
+                                                                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                                                )
+                                                            } else {
+                                                                LinearProgressIndicator(
+                                                                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                                                )
+                                                            }
                                                         }
                                                     } else {
                                                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
