@@ -22,6 +22,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.composed
@@ -92,7 +93,7 @@ fun RowScope.CoolButton(
                 containerColor = accentColor ?: MaterialTheme.colorScheme.primary,
                 contentColor = if (accentColor != null) Color.White else MaterialTheme.colorScheme.onPrimary
             ),
-            modifier = Modifier.weight(weight).height(48.dp).scale(pressScale)
+            modifier = Modifier.weight(weight).heightIn(min = 52.dp).scale(pressScale)
         ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
     } else {
         OutlinedButton(
@@ -100,7 +101,7 @@ fun RowScope.CoolButton(
             interactionSource = interaction,
             contentPadding = KeyPadding,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(weight).height(48.dp).scale(pressScale)
+            modifier = Modifier.weight(weight).heightIn(min = 52.dp).scale(pressScale)
         ) { Text(text, textAlign = TextAlign.Center, fontSize = 13.sp) }
     }
 }
@@ -130,7 +131,7 @@ fun RowScope.HoldScrollButton(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
         modifier = Modifier
             .weight(weight)
-            .height(48.dp)
+            .heightIn(min = 52.dp)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -145,7 +146,7 @@ fun RowScope.HoldScrollButton(
                 )
             }
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             Text(text, textAlign = TextAlign.Center, fontSize = 13.sp, fontWeight = if (isHolding) FontWeight.Bold else FontWeight.Medium)
         }
     }
