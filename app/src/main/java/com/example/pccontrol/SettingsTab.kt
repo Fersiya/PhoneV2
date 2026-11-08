@@ -299,6 +299,25 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                     }
                 }
 
+                SettingsSection(title = L("🧪 Бета"), summary = if (streamH264) L("H.264 включён") else L("Выключена")) {
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(L("H.264-трансляция"), fontWeight = FontWeight.Bold)
+                                Text(
+                                    L("Меньше трафика и больше кадров, особенно по Tailscale. Нужен хост 1.10 или новее. Если не заработает, приложение само вернётся к обычному режиму."),
+                                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = streamH264, onCheckedChange = {
+                                streamH264 = it
+                                h264Failed = false
+                                prefs.edit().putBoolean("stream_h264", it).apply()
+                            })
+                        }
+                    }
+                }
+
                 SettingsSection(title = L("🎨 Оформление"), summary = AppThemes.firstOrNull { it.first == themeId }?.second ?: "") {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
                         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

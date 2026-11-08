@@ -245,7 +245,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
         }
     }
 
-    LaunchedEffect(isStreamingActive, streamAllMonitors, host, token, currentTab) {
+    LaunchedEffect(isStreamingActive, streamAllMonitors, host, token, currentTab, streamH264) {
         activity.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             var fails = 0
             while (isStreamingActive && currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
@@ -255,8 +255,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
                 var gotFrames = false
                 var errText = ""
                 try {
-                    runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors,
-                        streamViewport(streamZoom, streamCx, streamCy)) { bmp, fpsVal, pingVal, fv ->
+                    val onFrameCb: (androidx.compose.ui.graphics.ImageBitmap, Int, Long, FloatArray) -> Unit = { bmp, fpsVal, pingVal, fv ->
                         screenBitmap = bmp
                         frameView = fv
                         liveStreamFps = fpsVal
@@ -265,6 +264,19 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
                         gotFrames = true
                         fails = 0
                         if (streamNote.isNotEmpty()) streamNote = ""
+                    }
+                    if (streamH264 && !h264Failed && !streamAllMonitors) {
+                        val home = isHomeLanAddress(host.trim())
+                        val err = runH264Stream(host.trim(), token.trim(), 60, if (home) 1280 else 960, if (home) 8000 else 3000,
+                            streamViewport(streamZoom, streamCx, streamCy), onFrameCb)
+                        if (!gotFrames && err.isNotEmpty()) {
+                            h264Failed = true
+                            AppLog.add(L("H.264 не заработал ($err) — переключаюсь на обычный режим"))
+                            streamNote = L("H.264 не заработал — включён обычный режим")
+                        }
+                    } else {
+                        runMjpegStream(host.trim(), token.trim(), targetFps, w, q, streamAllMonitors,
+                            streamViewport(streamZoom, streamCx, streamCy), onFrameCb)
                     }
                 } catch (e: Exception) {
                     errText = friendlyNetError(e.localizedMessage ?: e.javaClass.simpleName)

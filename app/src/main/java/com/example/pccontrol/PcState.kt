@@ -274,6 +274,9 @@ class PcState(
     var streamNote by run { mutableStateOf("") }
     var routeFailStreak = 0
     var audioOn by run { mutableStateOf(prefs.getBoolean("audio_on", false)) }
+    /** Бета: H.264-трансляция вместо MJPEG (если не получилось — на время сессии возвращаемся к MJPEG). */
+    var streamH264 by run { mutableStateOf(prefs.getBoolean("stream_h264", false)) }
+    var h264Failed by run { mutableStateOf(false) }
     var audioState by run { mutableStateOf("") }
     var streamZoom by run { mutableFloatStateOf(1f) }
     // Центр приближения (доли экрана ПК) и область, которую реально содержит последний кадр

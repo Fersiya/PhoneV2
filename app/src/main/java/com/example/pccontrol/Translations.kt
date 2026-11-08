@@ -2,6 +2,13 @@ package com.example.pccontrol
 
 /** Английские переводы интерфейса. Ключ — русский шаблон ({0},{1}… — подставляемые значения). */
 val EN: Map<String, String> = mapOf(
+    "🧪 Бета" to "🧪 Beta",
+    "H.264 включён" to "H.264 on",
+    "H.264-трансляция" to "H.264 stream",
+    "Меньше трафика и больше кадров, особенно по Tailscale. Нужен хост 1.10 или новее. Если не заработает, приложение само вернётся к обычному режиму." to "Less traffic and more frames, especially over Tailscale. Needs host 1.10 or newer. If it doesn't work, the app falls back to the normal mode by itself.",
+    "H.264: получено {0} к/с, преобразование {1} мс на кадр" to "H.264: received {0} fps, conversion {1} ms per frame",
+    "H.264 не заработал ({0}) — переключаюсь на обычный режим" to "H.264 failed ({0}) — switching to the normal mode",
+    "H.264 не заработал — включён обычный режим" to "H.264 failed — normal mode is on",
     "🌐 Язык" to "🌐 Language",
     "Авто" to "Auto",
     "Пульт ПК — отчёт {0}" to "PC Remote — report {0}",
