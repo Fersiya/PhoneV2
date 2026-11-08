@@ -226,5 +226,7 @@ fun ColumnScope.MediaTab(ui: PcState) {
                         }
                     }
                 }
+
+        MacroCard(ui)
     }
 }
