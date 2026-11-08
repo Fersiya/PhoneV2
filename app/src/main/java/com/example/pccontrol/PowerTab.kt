@@ -200,7 +200,7 @@ fun ColumnScope.PowerTab(ui: PcState) {
                                                     val isDownloading = entry.name in downloadingFiles
                                                     val isDownloaded = entry.name in downloadedFiles
                                                     if (isDownloading) {
-                                                        val (got, total) = downloadProgress[entry.name] ?: (0L to 0L)
+                                                        val (got, total) = fileDownloadProgress[entry.name] ?: (0L to 0L)
                                                         val frac = if (total > 0) (got.toFloat() / total).coerceIn(0f, 1f) else 0f
                                                         Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(112.dp)) {
                                                             Text(

@@ -288,7 +288,7 @@ class PcState(
     // Отслеживание скачивания файлов для кнопки "Открыть"
     var downloadingFiles by run { mutableStateOf<Set<String>>(emptySet()) }
     /** Прогресс скачивания: имя файла → (скачано байт, всего байт; всего 0 = неизвестно). */
-    var downloadProgress by run { mutableStateOf<Map<String, Pair<Long, Long>>>(emptyMap()) }
+    var fileDownloadProgress by run { mutableStateOf<Map<String, Pair<Long, Long>>>(emptyMap()) }
     var downloadedFiles by run { mutableStateOf<Map<String, Uri>>(emptyMap()) }
     var screenBitmap by run { mutableStateOf<ImageBitmap?>(null) }
 
@@ -1008,7 +1008,7 @@ class PcState(
         val buf = ByteArray(64 * 1024)
         var done = 0L
         var lastUi = 0L
-        downloadProgress = downloadProgress + (name to (0L to maxOf(total, 0L)))
+        fileDownloadProgress = fileDownloadProgress + (name to (0L to maxOf(total, 0L)))
         while (true) {
             val n = input.read(buf)
             if (n < 0) break
@@ -1017,10 +1017,10 @@ class PcState(
             val now = System.currentTimeMillis()
             if (now - lastUi >= 100) {
                 lastUi = now
-                downloadProgress = downloadProgress + (name to (done to maxOf(total, 0L)))
+                fileDownloadProgress = fileDownloadProgress + (name to (done to maxOf(total, 0L)))
             }
         }
-        downloadProgress = downloadProgress + (name to (done to maxOf(total, done)))
+        fileDownloadProgress = fileDownloadProgress + (name to (done to maxOf(total, done)))
     }
 
     fun downloadFileFromPc(entry: FileEntry) {
@@ -1084,7 +1084,7 @@ class PcState(
                 }
             }
             downloadingFiles = downloadingFiles - entry.name
-            downloadProgress = downloadProgress - entry.name
+            fileDownloadProgress = fileDownloadProgress - entry.name
             if (savedUri != null) {
                 downloadedFiles = downloadedFiles + (entry.name to savedUri!!)
             }
