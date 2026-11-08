@@ -299,7 +299,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
             try {
                 var resolvedIp: InetAddress? = null
                 var lastResolvedHost = ""
-                while (currentTab == NavTab.SCREEN && host.isNotBlank() && token.isNotBlank()) {
+                while ((currentTab == NavTab.SCREEN || currentTab == NavTab.TOUCHPAD) && host.isNotBlank() && token.isNotBlank()) {
                     val dx = accDx.roundToInt()
                     val dy = accDy.roundToInt()
                     if (dx != 0 || dy != 0) {

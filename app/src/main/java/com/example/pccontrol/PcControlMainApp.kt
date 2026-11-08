@@ -386,6 +386,7 @@ fun PcControlMainApp(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (tab) {
                         NavTab.SCREEN -> ScreenTab(ui)
+                        NavTab.TOUCHPAD -> TouchpadTab(ui)
                         NavTab.MEDIA -> MediaTab(ui)
                         NavTab.APPS -> AppsTab(ui)
                         NavTab.POWER -> PowerTab(ui)

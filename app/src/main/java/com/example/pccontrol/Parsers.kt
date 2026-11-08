@@ -19,7 +19,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "6.3"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "6.4"
     } catch (_: Exception) {
         "0.0"
     }
