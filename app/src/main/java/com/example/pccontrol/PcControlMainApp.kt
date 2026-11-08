@@ -399,6 +399,7 @@ fun PcControlMainApp(
 
 
         AddProfileDialog(ui)
+        OnboardingDialog(ui)
         FullscreenStream(ui)
         PendingDialog(ui)
     }
