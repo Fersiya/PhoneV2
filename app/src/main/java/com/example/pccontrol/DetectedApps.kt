@@ -26,32 +26,32 @@ fun DetectedAppsButton(ui: PcState) {
             onClick = {
                 triggerHapticClick()
                 scope.launch {
-                    status = "Ищу установленные программы…"
+                    status = L("Ищу установленные программы…")
                     status = try {
                         val r = http(host.trim(), token.trim(), "/apps/detected", "GET")
                         when {
                             r.code == 200 -> {
                                 val arr = JSONArray(r.body)
                                 val list = (0 until arr.length()).map { arr.getJSONObject(it).let { o -> o.getString("id") to o.getString("title") } }
-                                if (list.isEmpty()) "Новых программ не найдено" else {
+                                if (list.isEmpty()) L("Новых программ не найдено") else {
                                     picked = list.map { it.first }.toSet(); found = list; ""
                                 }
                             }
-                            r.code == 404 -> "Нужно обновить хост на ПК (версия 1.9.1 или новее)"
-                            r.code == 401 -> "Неверный токен"
-                            else -> "Ошибка ${r.code}"
+                            r.code == 404 -> L("Нужно обновить хост на ПК (версия 1.9.1 или новее)")
+                            r.code == 401 -> L("Неверный токен")
+                            else -> L("Ошибка ${r.code}")
                         }
-                    } catch (e: Exception) { "ПК недоступен (${e.javaClass.simpleName})" }
+                    } catch (e: Exception) { L("ПК недоступен (${e.javaClass.simpleName})") }
                 }
             },
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth()
-        ) { Text("✨ Найти установленные программы", fontSize = 13.sp) }
+        ) { Text(L("✨ Найти установленные программы"), fontSize = 13.sp) }
 
         found?.let { list ->
             AlertDialog(
                 onDismissRequest = { found = null },
-                title = { Text("Найдено на ПК") },
+                title = { Text(L("Найдено на ПК")) },
                 text = {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         list.forEach { (id, title) ->
@@ -70,13 +70,13 @@ fun DetectedAppsButton(ui: PcState) {
                             val body = JSONObject().put("ids", JSONArray(ids.toList())).toString()
                             status = try {
                                 val r = http(host.trim(), token.trim(), "/apps/detected/add", "POST", body)
-                                if (r.code == 200) "Программы добавлены ✔" else "Не удалось добавить: ${r.body.ifBlank { "ошибка ${r.code}" }}"
-                            } catch (e: Exception) { "ПК недоступен (${e.javaClass.simpleName})" }
+                                if (r.code == 200) L("Программы добавлены ✔") else L("Не удалось добавить: ${r.body.ifBlank { L("ошибка ${r.code}") }}")
+                            } catch (e: Exception) { L("ПК недоступен (${e.javaClass.simpleName})") }
                             delay(300); refresh()
                         }
-                    }) { Text("Добавить (${picked.size})") }
+                    }) { Text(L("Добавить (${picked.size})")) }
                 },
-                dismissButton = { TextButton(onClick = { found = null }) { Text("Отмена") } }
+                dismissButton = { TextButton(onClick = { found = null }) { Text(L("Отмена")) } }
             )
         }
     }

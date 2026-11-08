@@ -9,12 +9,12 @@ const val POLL_INTERVAL_MS = 2500L
 val KeyPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp)
 
 enum class NavTab(val title: String, val icon: String) {
-    SCREEN("Экран", "🖥️"),
-    TOUCHPAD("Тачпад", "👆"),
-    MEDIA("Медиа", "🎵"),
-    APPS("Окна", "🪟"),
-    POWER("Питание", "⚡"),
-    SETTINGS("Опции", "⚙️")
+    SCREEN(L("Экран"), "🖥️"),
+    TOUCHPAD(L("Тачпад"), "👆"),
+    MEDIA(L("Медиа"), "🎵"),
+    APPS(L("Окна"), "🪟"),
+    POWER(L("Питание"), "⚡"),
+    SETTINGS(L("Опции"), "⚙️")
 }
 
 data class HttpResult(val code: Int, val body: String)

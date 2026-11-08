@@ -159,7 +159,7 @@ fun PcControlMainApp(
                 syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
             }
         } else {
-            mediaSyncStatus = "Разрешите доступ к фото для автозагрузки"
+            mediaSyncStatus = L("Разрешите доступ к фото для автозагрузки")
         }
     }
 
@@ -255,9 +255,9 @@ fun PcControlMainApp(
                     }
 
                     val (dotColor, stateText) = when (pcOnline) {
-                        true -> Color(0xFF10B981) to if (tokenError) "Токен неверен" else "В сети"
-                        false -> Color(0xFFEF4444) to "Не в сети"
-                        null -> Color(0xFF6B7280) to "Настройка"
+                        true -> Color(0xFF10B981) to if (tokenError) L("Токен неверен") else L("В сети")
+                        false -> Color(0xFFEF4444) to L("Не в сети")
+                        null -> Color(0xFF6B7280) to L("Настройка")
                     }
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -284,7 +284,7 @@ fun PcControlMainApp(
             // Сообщение само пропадает через 8 секунд, если не менялось (ошибки остаются дольше)
             LaunchedEffect(status) {
                 if (status.isNotEmpty()) {
-                    kotlinx.coroutines.delay(if (status.contains("Ошибка") || status.contains("Сбой") || status.contains("Нет связи")) 20000L else 8000L)
+                    kotlinx.coroutines.delay(if (status.contains(L("Ошибка")) || status.contains(L("Сбой")) || status.contains(L("Нет связи"))) 20000L else 8000L)
                     status = ""
                 }
             }
@@ -300,7 +300,7 @@ fun PcControlMainApp(
                         detectTapGestures(onLongPress = {
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             cm.setPrimaryClip(android.content.ClipData.newPlainText("status", status))
-                            android.widget.Toast.makeText(context, "Скопировано", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, L("Скопировано"), android.widget.Toast.LENGTH_SHORT).show()
                         })
                     }
                 )
@@ -308,12 +308,12 @@ fun PcControlMainApp(
 
             if (pcOnline == true && !tokenError) {
                 val infoParts = mutableListOf<String>()
-                if (ramPercent > 0) infoParts.add("ОЗУ: $ramPercent%")
+                if (ramPercent > 0) infoParts.add(L("ОЗУ: $ramPercent%"))
                 if (shutdownRemainingSec > 0) {
                     val mins = (shutdownRemainingSec + 59) / 60
-                    infoParts.add("⏱ Выкл. через $mins мин")
+                    infoParts.add(L("⏱ Выкл. через $mins мин"))
                 }
-                if (activeWindow.isNotBlank()) infoParts.add("Окно: $activeWindow")
+                if (activeWindow.isNotBlank()) infoParts.add(L("Окно: $activeWindow"))
                 if (infoParts.isNotEmpty()) {
                     Text(
                         infoParts.joinToString("  •  "),
@@ -337,19 +337,19 @@ fun PcControlMainApp(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Доступно обновление на ПК! 🚀", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("Файл: ${otaUpdateInfo!!.versionName}", style = MaterialTheme.typography.bodySmall)
+                            Text(L("Доступно обновление на ПК! 🚀"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(L("Файл: ${otaUpdateInfo!!.versionName}"), style = MaterialTheme.typography.bodySmall)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = { otaUpdateInfo = null }) {
-                                Text("Позже", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(L("Позже"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Button(
                                 onClick = { startOtaUpdate() },
                                 contentPadding = KeyPadding,
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text("Обновить ⬇")
+                                Text(L("Обновить ⬇"))
                             }
                         }
                     }
@@ -367,7 +367,7 @@ fun PcControlMainApp(
                     ) {
                         CircularProgressIndicator(progress = { downloadProgress }, modifier = Modifier.size(20.dp))
                         Text(
-                            "Загрузка обновления: ${(downloadProgress * 100).toInt()}%",
+                            L("Загрузка обновления: ${(downloadProgress * 100).toInt()}%"),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }

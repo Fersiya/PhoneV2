@@ -29,7 +29,7 @@ fun OnboardingDialog(ui: PcState) {
         fun open(url: String) {
             try {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } catch (_: Exception) { status = "Не удалось открыть браузер" }
+            } catch (_: Exception) { status = L("Не удалось открыть браузер") }
         }
         fun finish() {
             prefs.edit().putBoolean("onboarding_done", true).apply()
@@ -39,48 +39,48 @@ fun OnboardingDialog(ui: PcState) {
 
         AlertDialog(
             onDismissRequest = {},
-            title = { Text(listOf("⚡ Добро пожаловать", "📡 Подключение", "🌐 Вне дома")[step], fontWeight = FontWeight.Bold) },
+            title = { Text(listOf(L("⚡ Добро пожаловать"), L("📡 Подключение"), L("🌐 Вне дома"))[step], fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (step) {
                         0 -> {
-                            Text("«Пульт ПК» управляет Windows-компьютером с телефона: экран и звук, мышь, программы, питание, файлы.")
-                            Text("Сначала на самом ПК нужно поставить программу-хост (бесплатно):", fontSize = 13.sp)
+                            Text(L("«Пульт ПК» управляет Windows-компьютером с телефона: экран и звук, мышь, программы, питание, файлы."))
+                            Text(L("Сначала на самом ПК нужно поставить программу-хост (бесплатно):"), fontSize = 13.sp)
                             Button(onClick = { open(SERVER_RELEASES) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                                Text("⬇ Скачать хост для ПК")
+                                Text(L("⬇ Скачать хост для ПК"))
                             }
-                            Text("Откройте эту страницу на компьютере, скачайте PCControl-Setup.exe и запустите. Окно «Пульт ПК» оставьте открытым.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(L("Откройте эту страницу на компьютере, скачайте PCControl-Setup.exe и запустите. Окно «Пульт ПК» оставьте открытым."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         1 -> {
-                            Text("Телефон и ПК должны быть в одной Wi-Fi сети. Нажмите кнопку — приложение найдёт ПК и само получит токен.")
+                            Text(L("Телефон и ПК должны быть в одной Wi-Fi сети. Нажмите кнопку — приложение найдёт ПК и само получит токен."))
                             Button(onClick = { discoverLocalPc() }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                                Text("🔍 Найти ПК в Wi-Fi")
+                                Text(L("🔍 Найти ПК в Wi-Fi"))
                             }
                             if (status.isNotBlank()) Text(status, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                            if (connected) Text("✔ ПК найден и подключён", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text("Не находит? Проверьте, что хост запущен, а брандмауэр Windows разрешил «Пульт ПК».", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (connected) Text(L("✔ ПК найден и подключён"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(L("Не находит? Проверьте, что хост запущен, а брандмауэр Windows разрешил «Пульт ПК»."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         else -> {
-                            Text("Чтобы управлять ПК из другой сети (мобильный интернет, чужой Wi-Fi), поставьте бесплатный Tailscale на ПК и телефон и войдите в один аккаунт.")
+                            Text(L("Чтобы управлять ПК из другой сети (мобильный интернет, чужой Wi-Fi), поставьте бесплатный Tailscale на ПК и телефон и войдите в один аккаунт."))
                             OutlinedButton(onClick = { open(TAILSCALE_URL) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                                Text("Открыть Tailscale")
+                                Text(L("Открыть Tailscale"))
                             }
-                            Text("Это можно сделать позже. Приложение само выберет маршрут: дома — Wi-Fi, вне дома — Tailscale.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(L("Это можно сделать позже. Приложение само выберет маршрут: дома — Wi-Fi, вне дома — Tailscale."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             },
             confirmButton = {
                 if (step < 2) {
-                    TextButton(onClick = { step++ }, enabled = step != 1 || connected) { Text("Далее") }
+                    TextButton(onClick = { step++ }, enabled = step != 1 || connected) { Text(L("Далее")) }
                 } else {
-                    TextButton(onClick = { finish() }) { Text("Готово") }
+                    TextButton(onClick = { finish() }) { Text(L("Готово")) }
                 }
             },
             dismissButton = {
                 Row {
-                    if (step > 0) TextButton(onClick = { step-- }) { Text("Назад") }
-                    TextButton(onClick = { finish() }) { Text("Пропустить") }
+                    if (step > 0) TextButton(onClick = { step-- }) { Text(L("Назад")) }
+                    TextButton(onClick = { finish() }) { Text(L("Пропустить")) }
                 }
             }
         )

@@ -36,19 +36,19 @@ object AppLog {
     fun share(context: Context, settingsInfo: String, diagnostics: String) {
         val out = File(context.cacheDir, "pccontrol-report.txt")
         val body = buildString {
-            appendLine("Пульт ПК — отчёт ${fmt.format(Date())}")
-            appendLine("Версия: ${getInstalledVersionName(context)}")
-            appendLine("Телефон: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
+            appendLine(L("Пульт ПК — отчёт ${fmt.format(Date())}"))
+            appendLine(L("Версия: ${getInstalledVersionName(context)}"))
+            appendLine(L("Телефон: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}"))
             appendLine()
-            appendLine("== Настройки ==")
+            appendLine(L("== Настройки =="))
             appendLine(settingsInfo)
             appendLine()
             if (diagnostics.isNotBlank()) {
-                appendLine("== Диагностика ==")
+                appendLine(L("== Диагностика =="))
                 appendLine(diagnostics)
                 appendLine()
             }
-            appendLine("== Журнал ==")
+            appendLine(L("== Журнал =="))
             appendLine(try { file?.readText() ?: "" } catch (_: Exception) { "" })
         }
         out.writeText(body)
@@ -56,9 +56,9 @@ object AppLog {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "Пульт ПК — отчёт")
+            putExtra(Intent.EXTRA_SUBJECT, L("Пульт ПК — отчёт"))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, "Отправить отчёт").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(Intent.createChooser(send, L("Отправить отчёт")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }

@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
         extractSharedUrl(intent)?.let { sharedUrlState.value = it }
 
         val appPrefs = getSharedPreferences("pc_control", MODE_PRIVATE)
+        AppLang.init(appPrefs)
         themeState.value = appPrefs.getString("app_theme", "cyber") ?: "cyber"
 
         setContent {

@@ -51,8 +51,8 @@ fun ColumnScope.TouchpadTab(ui: PcState) {
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Тачпад", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Скорость: ${"%.1f".format(mouseSensitivity)}×", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(L("Тачпад"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(L("Скорость: ${"%.1f".format(mouseSensitivity)}×"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Slider(
                     value = mouseSensitivity,
@@ -102,7 +102,7 @@ fun ColumnScope.TouchpadTab(ui: PcState) {
                                                 if (!moved && !longDone && event.changes[0].uptimeMillis - t0 > 450) {
                                                     longDone = true
                                                     sendMouseAction("right")
-                                                    lastGesture = "ПКМ"
+                                                    lastGesture = L("ПКМ")
                                                 }
                                             }
                                             n == 2 && maxFingers == 2 -> {
@@ -129,19 +129,19 @@ fun ColumnScope.TouchpadTab(ui: PcState) {
                                         abs(cx) > swipeDist && abs(cx) > abs(cy) -> {
                                             run("/media/alt_tab", refreshAfter = false); lastGesture = "Alt+Tab"
                                         }
-                                        cy < -swipeDist -> { run("/media/win_tab", refreshAfter = false); lastGesture = "Обзор окон" }
-                                        cy > swipeDist -> { run("/media/win_d", refreshAfter = false); lastGesture = "Свернуть всё" }
+                                        cy < -swipeDist -> { run("/media/win_tab", refreshAfter = false); lastGesture = L("Обзор окон") }
+                                        cy > swipeDist -> { run("/media/win_d", refreshAfter = false); lastGesture = L("Свернуть всё") }
                                     }
                                 } else if (!moved && !scrolled && !longDone) {
-                                    if (maxFingers == 2) { sendMouseAction("right"); lastGesture = "ПКМ" }
-                                    else if (maxFingers == 1) { sendMouseAction("left"); lastGesture = "ЛКМ" }
+                                    if (maxFingers == 2) { sendMouseAction("right"); lastGesture = L("ПКМ") }
+                                    else if (maxFingers == 1) { sendMouseAction("left"); lastGesture = L("ЛКМ") }
                                 }
                             }
                         },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        if (lastGesture.isEmpty()) "Проведи пальцем по панели" else lastGesture,
+                        if (lastGesture.isEmpty()) L("Проведи пальцем по панели") else lastGesture,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
@@ -149,7 +149,7 @@ fun ColumnScope.TouchpadTab(ui: PcState) {
                 }
 
                 Text(
-                    "1 палец: курсор • тап — ЛКМ • удержание — ПКМ\n2 пальца: прокрутка • тап — ПКМ\n3 пальца: ←→ Alt+Tab • ↑ обзор окон • ↓ свернуть всё",
+                    L("1 палец: курсор • тап — ЛКМ • удержание — ПКМ\n2 пальца: прокрутка • тап — ПКМ\n3 пальца: ←→ Alt+Tab • ↑ обзор окон • ↓ свернуть всё"),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -157,10 +157,10 @@ fun ColumnScope.TouchpadTab(ui: PcState) {
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    CoolButton("ЛКМ") { sendMouseAction("left") }
-                    CoolButton("2× Клик") { sendMouseAction("double") }
-                    CoolButton("ПКМ") { sendMouseAction("right") }
-                    CoolButton("Колёсико") { sendMouseAction("middle") }
+                    CoolButton(L("ЛКМ")) { sendMouseAction("left") }
+                    CoolButton(L("2× Клик")) { sendMouseAction("double") }
+                    CoolButton(L("ПКМ")) { sendMouseAction("right") }
+                    CoolButton(L("Колёсико")) { sendMouseAction("middle") }
                 }
             }
         }

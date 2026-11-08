@@ -138,11 +138,11 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Трансляция экрана", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(L("Трансляция экрана"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             if (isStreamingActive && showStreamFpsOverlay) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     PulseDot(Color(0xFF10B981))
-                                    Text("Прямой эфир", color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(L("Прямой эфир"), color = Color(0xFF10B981), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -165,10 +165,10 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                 shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
-                                Text("▶ Запустить трансляцию экрана", fontWeight = FontWeight.Bold)
+                                Text(L("▶ Запустить трансляцию экрана"), fontWeight = FontWeight.Bold)
                             }
                             Text(
-                                "Трансляция выключена (не расходует сеть и заряд батареи). Включённая запускается сама при открытии приложения.",
+                                L("Трансляция выключена (не расходует сеть и заряд батареи). Включённая запускается сама при открытии приложения."),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -180,11 +180,11 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                 modifier = Modifier.fillMaxWidth().height(42.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("⏹ Остановить трансляцию", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                Text(L("⏹ Остановить трансляцию"), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CoolButton(if (showStreamFpsOverlay) "👁 FPS" else "👁‍🗨 Без FPS") {
+                                CoolButton(if (showStreamFpsOverlay) "👁 FPS" else L("👁‍🗨 Без FPS")) {
                                     showStreamFpsOverlay = !showStreamFpsOverlay
                                     prefs.edit().putBoolean("show_stream_fps_overlay", showStreamFpsOverlay).apply()
                                 }
@@ -197,12 +197,12 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                     streamCx = 0.5f
                                     streamCy = 0.5f
                                 }
-                                CoolButton(if (audioOn) "🔊 Звук" else "🔇 Звук") {
+                                CoolButton(if (audioOn) L("🔊 Звук") else L("🔇 Звук")) {
                                     audioOn = !audioOn
                                     prefs.edit().putBoolean("audio_on", audioOn).apply()
                                 }
-                                CoolButton(if (streamAllMonitors) "Все экр." else "1 экр.") { streamAllMonitors = !streamAllMonitors }
-                                CoolButton(if (directTapMode) "🎯 В точку" else "🖱 Свайп") {
+                                CoolButton(if (streamAllMonitors) L("Все экр.") else L("1 экр.")) { streamAllMonitors = !streamAllMonitors }
+                                CoolButton(if (directTapMode) L("🎯 В точку") else L("🖱 Свайп")) {
                                     directTapMode = !directTapMode
                                     prefs.edit().putBoolean("direct_tap_mode", directTapMode).apply()
                                 }
@@ -227,7 +227,7 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                 if (currentBmp != null) {
                                     Image(
                                         bitmap = currentBmp,
-                                        contentDescription = "Экран ПК",
+                                        contentDescription = L("Экран ПК"),
                                         contentScale = ContentScale.FillBounds,
                                         filterQuality = FilterQuality.Low,
                                         modifier = Modifier
@@ -279,7 +279,7 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                             }
                                     )
                                 } else {
-                                    Text("Ожидание первого кадра…", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                                    Text(L("Ожидание первого кадра…"), color = Color.White, style = MaterialTheme.typography.bodyMedium)
                                 }
                                 if (isStreamingActive && showStreamFpsOverlay) {
                                     Box(
@@ -302,14 +302,14 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CoolButton("ЛКМ") { sendMouseAction("left") }
-                                CoolButton("ПКМ") { sendMouseAction("right") }
-                                HoldScrollButton("⬆ Скролл") { sendMouseAction("scroll", dy = 3) }
-                                HoldScrollButton("⬇ Скролл") { sendMouseAction("scroll", dy = -3) }
-                                CoolButton("📸 Скриншот", accentColor = Color(0xFF10B981)) { captureScreenshotToPhone() }
+                                CoolButton(L("ЛКМ")) { sendMouseAction("left") }
+                                CoolButton(L("ПКМ")) { sendMouseAction("right") }
+                                HoldScrollButton(L("⬆ Скролл")) { sendMouseAction("scroll", dy = 3) }
+                                HoldScrollButton(L("⬇ Скролл")) { sendMouseAction("scroll", dy = -3) }
+                                CoolButton(L("📸 Скриншот"), accentColor = Color(0xFF10B981)) { captureScreenshotToPhone() }
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CoolButton(if (isFullscreenStream) "✕ Выйти из полного экрана" else "⛶ Во весь экран", filled = true, accentColor = Color(0xFF0284C7)) {
+                                CoolButton(if (isFullscreenStream) L("✕ Выйти из полного экрана") else L("⛶ Во весь экран"), filled = true, accentColor = Color(0xFF0284C7)) {
                                     isFullscreenStream = !isFullscreenStream
                                 }
                             }
@@ -328,8 +328,8 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Тачпад и ввод текста", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Скорость: ${String.format(Locale.US, "%.1f", mouseSensitivity)}×", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(L("Тачпад и ввод текста"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(L("Скорость: ${String.format(Locale.US, "%.1f", mouseSensitivity)}×"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         Slider(
@@ -373,7 +373,7 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "Сенсорная панель\nТап — ЛКМ • 2×Тап — 2×Клик • Удержание — ПКМ",
+                                L("Сенсорная панель\nТап — ЛКМ • 2×Тап — 2×Клик • Удержание — ПКМ"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -381,11 +381,11 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("ЛКМ") { sendMouseAction("left") }
-                            CoolButton("2× Клик") { sendMouseAction("double") }
-                            CoolButton("ПКМ") { sendMouseAction("right") }
-                            HoldScrollButton("Скролл ⬆") { sendMouseAction("scroll", dy = 3) }
-                            HoldScrollButton("Скролл ⬇") { sendMouseAction("scroll", dy = -3) }
+                            CoolButton(L("ЛКМ")) { sendMouseAction("left") }
+                            CoolButton(L("2× Клик")) { sendMouseAction("double") }
+                            CoolButton(L("ПКМ")) { sendMouseAction("right") }
+                            HoldScrollButton(L("Скролл ⬆")) { sendMouseAction("scroll", dy = 3) }
+                            HoldScrollButton(L("Скролл ⬇")) { sendMouseAction("scroll", dy = -3) }
                         }
 
                         Row(
@@ -396,7 +396,7 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                             OutlinedTextField(
                                 value = textToType,
                                 onValueChange = { textToType = it },
-                                label = { Text("Печать на ПК (RU / EN)") },
+                                label = { Text(L("Печать на ПК (RU / EN)")) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
@@ -406,15 +406,15 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.height(56.dp)
                             ) {
-                                Text("Ввод ↵", fontWeight = FontWeight.Bold)
+                                Text(L("Ввод ↵"), fontWeight = FontWeight.Bold)
                             }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("Win+D 🖥️") { run("/media/win_d", refreshAfter = true) }
-                            CoolButton("Диспетчер 📊") { run("/media/task_mgr", refreshAfter = true) }
-                            CoolButton("Скриншот 📸") { captureScreenshotToPhone() }
-                            CoolButton("🔒 Блок") { run("/lock", refreshAfter = false) }
+                            CoolButton(L("Диспетчер 📊")) { run("/media/task_mgr", refreshAfter = true) }
+                            CoolButton(L("Скриншот 📸")) { captureScreenshotToPhone() }
+                            CoolButton(L("🔒 Блок")) { run("/lock", refreshAfter = false) }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CoolButton("Ctrl+Z") { run("/media/ctrl_z", refreshAfter = false) }
@@ -425,8 +425,8 @@ fun ColumnScope.ScreenTab(ui: PcState) {
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("📋 Буфер → ПК") { sendPhoneClipboardToPc() }
-                            CoolButton("📥 Буфер ← ПК") { fetchPcClipboardToPhone() }
+                            CoolButton(L("📋 Буфер → ПК")) { sendPhoneClipboardToPc() }
+                            CoolButton(L("📥 Буфер ← ПК")) { fetchPcClipboardToPhone() }
                         }
                     }
                 }

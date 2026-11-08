@@ -171,7 +171,7 @@ fun BoxScope.StreamFrameHostBox(bitmapProvider: () -> ImageBitmap?, content: @Co
 @Composable
 fun StreamStatsText(fpsProvider: () -> Int, pingProvider: () -> Long, fontSize: androidx.compose.ui.unit.TextUnit) {
     Text(
-        text = "🟢 ${fpsProvider()} FPS • ${pingProvider()} мс",
+        text = L("🟢 ${fpsProvider()} FPS • ${pingProvider()} мс"),
         fontSize = fontSize,
         fontWeight = FontWeight.Bold,
         color = Color(0xFF00E5FF)

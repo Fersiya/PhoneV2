@@ -133,9 +133,9 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
     }
 
 
-    LaunchedEffect(Unit) { AppLog.init(context); AppLog.add("— приложение открыто —") }
-    LaunchedEffect(status) { if (status.isNotBlank()) AppLog.add("статус: $status") }
-    LaunchedEffect(routeLabel) { if (routeLabel.isNotBlank()) AppLog.add("маршрут: $routeLabel | host=$host lan=$lanHost ts=$tsHost режим=$connMode") }
+    LaunchedEffect(Unit) { AppLog.init(context); AppLog.add(L("— приложение открыто —")) }
+    LaunchedEffect(status) { if (status.isNotBlank()) AppLog.add(L("статус: $status")) }
+    LaunchedEffect(routeLabel) { if (routeLabel.isNotBlank()) AppLog.add(L("маршрут: $routeLabel | host=$host lan=$lanHost ts=$tsHost режим=$connMode")) }
     LaunchedEffect(autoSyncMedia, host, token) {
         if (autoSyncMedia && host.isNotBlank() && token.isNotBlank()) {
             val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -183,7 +183,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
             if (host.isNotBlank() && token.isNotBlank()) {
                 sendUrlToPc(incomingSharedUrl)
             } else {
-                status = "Укажите адрес ПК в настройках"
+                status = L("Укажите адрес ПК в настройках")
                 currentTab = NavTab.SETTINGS
             }
             onSharedUrlConsumed()
@@ -273,7 +273,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
                 if (!(isStreamingActive && currentTab == NavTab.SCREEN)) break
                 if (!gotFrames) {
                     fails++
-                    streamNote = "Связь потеряна: ${errText.ifBlank { "нет кадров" }}. Переподключаюсь… ($fails)"
+                    streamNote = L("Связь потеряна: ${errText.ifBlank { L("нет кадров") }}. Переподключаюсь… ($fails)")
                     // Может быть, телефон сменил сеть (Wi-Fi ↔ мобильный): пересчитываем маршрут
                     if (fails == 2 || fails % 5 == 0) {
                         try { resolveRoute() } catch (_: Exception) {}
@@ -285,7 +285,7 @@ fun PcEffects(ui: PcState, incomingSharedUrl: String?, onSharedUrlConsumed: () -
                     }
                     delay(minOf(300L * fails, 3000L)) // 0.3 → 3 с, не долбим ПК
                 } else {
-                    streamNote = "Поток прервался. Переподключаюсь…"
+                    streamNote = L("Поток прервался. Переподключаюсь…")
                     delay(300L)
                 }
             }

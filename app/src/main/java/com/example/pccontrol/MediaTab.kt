@@ -129,7 +129,7 @@ fun ColumnScope.MediaTab(ui: PcState) {
     with(ui) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(0)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("YouTube и ссылки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(L("YouTube и ссылки"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -138,19 +138,19 @@ fun ColumnScope.MediaTab(ui: PcState) {
                             OutlinedTextField(
                                 value = videoUrl,
                                 onValueChange = { videoUrl = it },
-                                label = { Text("Ссылка или поиск на YouTube") },
+                                label = { Text(L("Ссылка или поиск на YouTube")) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             )
                             Button(onClick = { sendUrlToPc(videoUrl) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.height(56.dp)) {
-                                Text("На ПК ▶", fontWeight = FontWeight.Bold)
+                                Text(L("На ПК ▶"), fontWeight = FontWeight.Bold)
                             }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CoolButton("📋 Из буфера на ПК", weight = 1.1f) { pasteAndOpenClipboard() }
-                            CoolButton("✕ Закрыть вкладку") { run("/media/close_tab", refreshAfter = false) }
-                            CoolButton("↩ Вернуть вкладку") { run("/media/reopen_tab", refreshAfter = false) }
+                            CoolButton(L("📋 Из буфера на ПК"), weight = 1.1f) { pasteAndOpenClipboard() }
+                            CoolButton(L("✕ Закрыть вкладку")) { run("/media/close_tab", refreshAfter = false) }
+                            CoolButton(L("↩ Вернуть вкладку")) { run("/media/reopen_tab", refreshAfter = false) }
                         }
                     }
                 }
@@ -171,7 +171,7 @@ fun ColumnScope.MediaTab(ui: PcState) {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(volIcon, fontSize = 24.sp)
-                                Text("Громкость звука", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(L("Громкость звука"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("$vol%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
@@ -180,7 +180,7 @@ fun ColumnScope.MediaTab(ui: PcState) {
                                     contentPadding = KeyPadding,
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("🎧 Выход")
+                                    Text(L("🎧 Выход"))
                                 }
                             }
                         }
@@ -203,26 +203,26 @@ fun ColumnScope.MediaTab(ui: PcState) {
 
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(140)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Пульт плеера и YouTube", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(L("Пульт плеера и YouTube"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CoolButton("⏮ Пред.") { run("/media/prev", refreshAfter = false) }
-                            CoolButton("⏯ Пауза / Play", weight = 1.4f, filled = true) { run("/media/play_pause", refreshAfter = false) }
-                            CoolButton("⏭ След.") { run("/media/next", refreshAfter = false) }
+                            CoolButton(L("⏮ Пред.")) { run("/media/prev", refreshAfter = false) }
+                            CoolButton(L("⏯ Пауза / Play"), weight = 1.4f, filled = true) { run("/media/play_pause", refreshAfter = false) }
+                            CoolButton(L("⏭ След.")) { run("/media/next", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("⏪ -10с") { run("/media/yt_back_10", refreshAfter = false) }
-                            CoolButton("-5с") { run("/media/yt_back", refreshAfter = false) }
-                            CoolButton("⛶ Полный экран", weight = 1.2f) { run("/media/yt_fullscreen", refreshAfter = false) }
-                            CoolButton("+5с") { run("/media/yt_forward", refreshAfter = false) }
-                            CoolButton("+10с ⏩") { run("/media/yt_forward_10", refreshAfter = false) }
+                            CoolButton(L("⏪ -10с")) { run("/media/yt_back_10", refreshAfter = false) }
+                            CoolButton(L("-5с")) { run("/media/yt_back", refreshAfter = false) }
+                            CoolButton(L("⛶ Полный экран"), weight = 1.2f) { run("/media/yt_fullscreen", refreshAfter = false) }
+                            CoolButton(L("+5с")) { run("/media/yt_forward", refreshAfter = false) }
+                            CoolButton(L("+10с ⏩")) { run("/media/yt_forward_10", refreshAfter = false) }
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CoolButton("⬆ Shorts выше") { run("/media/yt_up", refreshAfter = false) }
-                            CoolButton("⬇ Shorts ниже") { run("/media/yt_down", refreshAfter = false) }
-                            CoolButton("🖥 Свернуть окна") { run("/media/win_d", refreshAfter = false) }
+                            CoolButton(L("⬆ Shorts выше")) { run("/media/yt_up", refreshAfter = false) }
+                            CoolButton(L("⬇ Shorts ниже")) { run("/media/yt_down", refreshAfter = false) }
+                            CoolButton(L("🖥 Свернуть окна")) { run("/media/win_d", refreshAfter = false) }
                         }
                     }
                 }

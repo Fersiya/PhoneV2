@@ -130,9 +130,9 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                 OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(0)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Компьютеры (Профили)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(L("Компьютеры (Профили)"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Button(onClick = { showAddProfileDialog = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                                Text("+ Добавить ПК", fontSize = 12.sp)
+                                Text(L("+ Добавить ПК"), fontSize = 12.sp)
                             }
                         }
 
@@ -148,7 +148,7 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                                         lanHost = prefs.getString("lan_host_${prof.id}", null) ?: prof.host.takeIf { isLanAddress(it) } ?: ""
                                         tsHost = prefs.getString("ts_host_${prof.id}", "") ?: ""
                                         save()
-                                        status = "Выбран профиль: ${prof.name}"
+                                        status = L("Выбран профиль: ${prof.name}")
                                         scope.launch { refresh() }
                                     },
                                     label = { Text("🖥️ ${prof.name}") }
@@ -158,10 +158,10 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                     }
                 }
 
-                SettingsSection(title = "🔌 Подключение", summary = routeLabel.ifBlank { "Не настроено" }, startExpanded = true) {
+                SettingsSection(title = L("🔌 Подключение"), summary = routeLabel.ifBlank { L("Не настроено") }, startExpanded = true) {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("auto" to "🔄 Авто", "lan" to "🏠 Дома", "remote" to "🔒 Вне дома").forEach { (mode, title) ->
+                            listOf("auto" to L("🔄 Авто"), "lan" to L("🏠 Дома"), "remote" to L("🔒 Вне дома")).forEach { (mode, title) ->
                                 FilterChip(
                                     selected = connMode == mode,
                                     onClick = { connMode = mode; save() },
@@ -170,31 +170,31 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                             }
                         }
                         if (routeLabel.isNotBlank()) {
-                            Text("Сейчас: $routeLabel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(L("Сейчас: $routeLabel"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                         Button(
                             onClick = { discoverLocalPc() },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("🔍 Найти ПК в Wi-Fi", fontWeight = FontWeight.Bold)
+                            Text(L("🔍 Найти ПК в Wi-Fi"), fontWeight = FontWeight.Bold)
                         }
                         OutlinedButton(
                             onClick = { runDiagnostics() },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (isDiagnosing) "⏳ Проверяю связь…" else "🩺 Диагностика связи (Проверить ПК)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(if (isDiagnosing) L("⏳ Проверяю связь…") else L("🩺 Диагностика связи (Проверить ПК)"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                         OutlinedButton(
                             onClick = {
-                                val info = "режим=$connMode\nhost=$host\nlan=$lanHost\nts=$tsHost\nmac=${if (mac.isBlank()) "нет" else mac}\nтокен=${if (token.isBlank()) "нет" else "задан"}\nмаршрут=$routeLabel\nПК онлайн=$pcOnline"
-                                try { AppLog.share(context, info, diagnosticsReport) } catch (e: Exception) { status = "Не удалось собрать отчёт: ${e.message}" }
+                                val info = L("режим=$connMode\nhost=$host\nlan=$lanHost\nts=$tsHost\nmac=${if (mac.isBlank()) L("нет") else mac}\nтокен=${if (token.isBlank()) L("нет") else L("задан")}\nмаршрут=$routeLabel\nПК онлайн=$pcOnline")
+                                try { AppLog.share(context, info, diagnosticsReport) } catch (e: Exception) { status = L("Не удалось собрать отчёт: ${e.message}") }
                             },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("📄 Собрать отчёт и отправить", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(L("📄 Собрать отчёт и отправить"), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                         if (diagnosticsReport.isNotBlank()) {
                             Surface(
@@ -214,13 +214,13 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                         }
                         var showAdvanced by rememberSaveable { mutableStateOf(false) }
                         TextButton(onClick = { showAdvanced = !showAdvanced }, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (showAdvanced) "Скрыть адреса и токен ▲" else "Адреса, токен, MAC ▼")
+                            Text(if (showAdvanced) L("Скрыть адреса и токен ▲") else L("Адреса, токен, MAC ▼"))
                         }
                         if (showAdvanced) {
                         OutlinedTextField(
                             value = lanHost,
                             onValueChange = { lanHost = it },
-                            label = { Text("Адрес дома (IP ПК в Wi-Fi)") },
+                            label = { Text(L("Адрес дома (IP ПК в Wi-Fi)")) },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -228,7 +228,7 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                         OutlinedTextField(
                             value = tsHost,
                             onValueChange = { tsHost = it },
-                            label = { Text("Tailscale (необязательно, 100.x.x.x)") },
+                            label = { Text(L("Tailscale (необязательно, 100.x.x.x)")) },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -236,7 +236,7 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                         OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
-                            label = { Text("Токен (из окна «Пульт ПК» на компьютере)") },
+                            label = { Text(L("Токен (из окна «Пульт ПК» на компьютере)")) },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             visualTransformation = PasswordVisualTransformation(),
@@ -246,7 +246,7 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                         FilledTonalButton(
                             onClick = {
                                 scope.launch {
-                                    status = "Запрашиваю токен у ПК ($host)…"
+                                    status = L("Запрашиваю токен у ПК ($host)…")
                                     val res = pairWithPc(host.trim())
                                     if (res.success && res.token.isNotBlank()) {
                                         token = res.token
@@ -264,12 +264,12 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("🔑 Получить токен с ПК по кнопке")
+                            Text(L("🔑 Получить токен с ПК по кнопке"))
                         }
                         OutlinedTextField(
                             value = mac,
                             onValueChange = { mac = it },
-                            label = { Text("MAC-адрес ПК (для Wake-on-LAN)") },
+                            label = { Text(L("MAC-адрес ПК (для Wake-on-LAN)")) },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -279,7 +279,27 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                 }
 
 
-                SettingsSection(title = "🎨 Оформление", summary = AppThemes.firstOrNull { it.first == themeId }?.second ?: "") {
+                SettingsSection(title = L("🌐 Язык"), summary = when (prefs.getString("lang", "auto")) { "ru" -> "Русский"; "en" -> "English"; else -> L("Авто") }) {
+                    var langPref by remember { mutableStateOf(prefs.getString("lang", "auto") ?: "auto") }
+                    Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("auto" to L("Авто"), "ru" to "Русский", "en" to "English").forEach { (id, title) ->
+                                FilterChip(
+                                    selected = langPref == id,
+                                    onClick = {
+                                        langPref = id
+                                        prefs.edit().putString("lang", id).apply()
+                                        AppLang.init(prefs)
+                                        (context as? android.app.Activity)?.recreate()
+                                    },
+                                    label = { Text(title) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                SettingsSection(title = L("🎨 Оформление"), summary = AppThemes.firstOrNull { it.first == themeId }?.second ?: "") {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
                         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AppThemes.forEach { (id, title, scheme) ->
@@ -295,10 +315,10 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                 }
 
 
-                SettingsSection(title = "🔄 Обновления", summary = "Версия ${getInstalledVersionName(context)}") {
+                SettingsSection(title = L("🔄 Обновления"), summary = L("Версия ${getInstalledVersionName(context)}")) {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "Установленная версия: v${getInstalledVersionName(context)} (код ${getInstalledVersionCode(context)})",
+                            L("Установленная версия: v${getInstalledVersionName(context)} (код ${getInstalledVersionCode(context)})"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -306,7 +326,7 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                         Button(
                             onClick = {
                                 scope.launch {
-                                    status = "Проверяю папку updates на ПК…"
+                                    status = L("Проверяю папку updates на ПК…")
                                     val res = checkOtaUpdate(context, host.trim(), token.trim(), installedApkHash)
                                     otaUpdateInfo = res.update
                                     status = res.message
@@ -315,12 +335,12 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Проверить обновления на ПК 🔄")
+                            Text(L("Проверить обновления на ПК 🔄"))
                         }
                     }
                 }
 
-                SettingsSection(title = "📸 Автозагрузка фото", summary = if (autoSyncMedia) "Включена" else "Выключена") {
+                SettingsSection(title = L("📸 Автозагрузка фото"), summary = if (autoSyncMedia) L("Включена") else L("Выключена")) {
                     Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -329,7 +349,7 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "Новые снимки с камеры сами копируются в папку фото на ПК, пока вы в сети",
+                                    L("Новые снимки с камеры сами копируются в папку фото на ПК, пока вы в сети"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -381,15 +401,15 @@ fun ColumnScope.SettingsTab(ui: PcState) {
                             OutlinedButton(
                                 onClick = {
                                     scope.launch {
-                                        mediaSyncStatus = "Проверяю новые фото и видео…"
+                                        mediaSyncStatus = L("Проверяю новые фото и видео…")
                                         val count = syncPendingMedia(context, host.trim(), token.trim(), activeProfileId) { mediaSyncStatus = it }
-                                        if (count == 0) mediaSyncStatus = "Все фото и видео уже на ПК ✔"
+                                        if (count == 0) mediaSyncStatus = L("Все фото и видео уже на ПК ✔")
                                     }
                                 },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Синхронизировать сейчас 🔄")
+                                Text(L("Синхронизировать сейчас 🔄"))
                             }
                         }
                     }

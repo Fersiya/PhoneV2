@@ -211,8 +211,8 @@ suspend fun runMjpegStream(
                     }
                     val currentPing = nowMs - frameStartMs
                     if (nowMs - lastLogMs >= 10000 && statFrames > 0) {
-                        AppLog.add("поток: цель $fps к/с, получено $calcFps к/с, кадр ${bytesSum / statFrames / 1024} КБ, " +
-                            "чтение ${readNs / statFrames / 1_000_000} мс, декод ${decNs / statFrames / 1_000_000} мс на кадр")
+                        AppLog.add(L("поток: цель $fps к/с, получено $calcFps к/с, кадр ${bytesSum / statFrames / 1024} КБ, ") +
+                            L("чтение ${readNs / statFrames / 1_000_000} мс, декод ${decNs / statFrames / 1_000_000} мс на кадр"))
                         readNs = 0; decNs = 0; bytesSum = 0; statFrames = 0; lastLogMs = nowMs
                     }
 
@@ -245,7 +245,7 @@ suspend fun runAudioStream(host: String, token: String, remote: Boolean, onState
         val code = conn.responseCode
         if (code != 200) {
             val msg = try { conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
-            return@withContext "звук: ошибка $code $msg".trim()
+            return@withContext L("звук: ошибка $code $msg").trim()
         }
         val rate = conn.getHeaderField("X-Audio-Rate")?.toIntOrNull() ?: 48000
         val ch = conn.getHeaderField("X-Audio-Channels")?.toIntOrNull() ?: 2
@@ -271,8 +271,8 @@ suspend fun runAudioStream(host: String, token: String, remote: Boolean, onState
             .setTransferMode(android.media.AudioTrack.MODE_STREAM)
         if (android.os.Build.VERSION.SDK_INT >= 26) builder.setPerformanceMode(android.media.AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
         track = builder.build()
-        onState("играет: $rate Гц, ${if (ch >= 2) "стерео" else "моно"}")
-        AppLog.add("звук: $rate Гц, каналов $ch, режим $mode")
+        onState(L("играет: $rate Гц, ${if (ch >= 2) L("стерео") else L("моно")}"))
+        AppLog.add(L("звук: $rate Гц, каналов $ch, режим $mode"))
         val input = conn.inputStream
         val buf = ByteArray(8192)
         // Сначала набираем половину буфера и только потом запускаем воспроизведение — иначе трески из-за пустого буфера
@@ -291,7 +291,7 @@ suspend fun runAudioStream(host: String, token: String, remote: Boolean, onState
         }
         ""
     } catch (e: Exception) {
-        if (coroutineContext.isActive) "звук: ${e.javaClass.simpleName}" else ""
+        if (coroutineContext.isActive) L("звук: ${e.javaClass.simpleName}") else ""
     } finally {
         handle?.dispose()
         try { track?.stop() } catch (_: Exception) {}
@@ -339,18 +339,18 @@ suspend fun checkOtaUpdate(context: Context, host: String, token: String, instal
         try {
             val r = http(host, token, "/update/check", "GET", timeoutMs = 3000)
             if (r.code == 404) {
-                return@withContext OtaCheckResult(null, "Ошибка 404: перезапустите server.py на ПК")
+                return@withContext OtaCheckResult(null, L("Ошибка 404: перезапустите server.py на ПК"))
             }
             if (r.code == 401) {
-                return@withContext OtaCheckResult(null, "Ошибка 401: неверный токен подключения")
+                return@withContext OtaCheckResult(null, L("Ошибка 401: неверный токен подключения"))
             }
             if (r.code == 200) {
                 val o = JSONObject(r.body)
                 val avail = o.optBoolean("available", false)
                 val dir = o.optString("updatesDir", "")
                 if (!avail) {
-                    val dirMsg = if (dir.isNotEmpty()) " (папка: $dir)" else ""
-                    return@withContext OtaCheckResult(null, "На ПК в папке updates нет .apk$dirMsg")
+                    val dirMsg = if (dir.isNotEmpty()) L(" (папка: $dir)") else ""
+                    return@withContext OtaCheckResult(null, L("На ПК в папке updates нет .apk$dirMsg"))
                 }
                 val vCode = o.optLong("versionCode", 0L)
                 val vName = o.optString("versionName", "")
@@ -366,18 +366,18 @@ suspend fun checkOtaUpdate(context: Context, host: String, token: String, instal
                 }
 
                 if (hash.isNotEmpty() && runningApkHash.isNotEmpty() && hash.equals(runningApkHash, ignoreCase = true)) {
-                    return@withContext OtaCheckResult(null, "Установлена последняя версия ($fn) ✔")
+                    return@withContext OtaCheckResult(null, L("Установлена последняя версия ($fn) ✔"))
                 }
 
                 if (vCode > currentCode || (hash.isNotEmpty() && runningApkHash.isNotEmpty() && !hash.equals(runningApkHash, ignoreCase = true))) {
-                    return@withContext OtaCheckResult(UpdateInfo(true, vCode, vName, hash, size), "Найдено обновление: $fn ✔")
+                    return@withContext OtaCheckResult(UpdateInfo(true, vCode, vName, hash, size), L("Найдено обновление: $fn ✔"))
                 } else {
-                    return@withContext OtaCheckResult(null, "Установлена актуальная версия ✔")
+                    return@withContext OtaCheckResult(null, L("Установлена актуальная версия ✔"))
                 }
             }
-            OtaCheckResult(null, "Ответ ПК: ${r.code}")
+            OtaCheckResult(null, L("Ответ ПК: ${r.code}"))
         } catch (e: Exception) {
-            OtaCheckResult(null, "ПК недоступен (${e.javaClass.simpleName})")
+            OtaCheckResult(null, L("ПК недоступен (${e.javaClass.simpleName})"))
         }
     }
 
@@ -399,7 +399,7 @@ suspend fun downloadAndInstallApk(
                         }
                         context.startActivity(intent)
                     }
-                    return@withContext "Разрешите установку из этого источника и нажмите 'Обновить' ещё раз"
+                    return@withContext L("Разрешите установку из этого источника и нажмите 'Обновить' ещё раз")
                 }
             }
 
@@ -414,7 +414,7 @@ suspend fun downloadAndInstallApk(
             conn.setRequestProperty("Cache-Control", "no-cache")
             conn.setRequestProperty("Pragma", "no-cache")
             if (conn.responseCode != 200) {
-                return@withContext "Ошибка загрузки: код ${conn.responseCode}"
+                return@withContext L("Ошибка загрузки: код ${conn.responseCode}")
             }
             val totalSize = conn.contentLength
             val apkFile = File(context.cacheDir, "pc-control-update.apk")
@@ -439,7 +439,7 @@ suspend fun downloadAndInstallApk(
                 val computed = computeFileSha256(apkFile)
                 if (!computed.equals(expectedHash.trim(), ignoreCase = true)) {
                     apkFile.delete()
-                    return@withContext "Ошибка: хеш файла не совпадает! Ожидался $expectedHash, получен $computed"
+                    return@withContext L("Ошибка: хеш файла не совпадает! Ожидался $expectedHash, получен $computed")
                 }
             }
 
@@ -454,9 +454,9 @@ suspend fun downloadAndInstallApk(
                 putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
             context.startActivity(installIntent)
-            "Запуск установщика Android…"
+            L("Запуск установщика Android…")
         } catch (e: Exception) {
-            "Ошибка: ${e.localizedMessage ?: e.javaClass.simpleName}"
+            L("Ошибка: ${e.localizedMessage ?: e.javaClass.simpleName}")
         }
     }
 
@@ -470,12 +470,12 @@ suspend fun command(
     try {
         val r = http(host, token, path, method, bodyText)
         when (r.code) {
-            200 -> "Готово ✔"
-            401 -> "Неверный токен"
-            else -> "Ошибка ${r.code}: ${r.body}"
+            200 -> L("Готово ✔")
+            401 -> L("Неверный токен")
+            else -> L("Ошибка ${r.code}: ${r.body}")
         }
     } catch (e: Exception) {
-        "ПК недоступен (${e.javaClass.simpleName})"
+        L("ПК недоступен (${e.javaClass.simpleName})")
     }
 
 suspend fun sendMagicPacket(mac: String): String =
@@ -483,7 +483,7 @@ suspend fun sendMagicPacket(mac: String): String =
         try {
             val clean = mac.replace(Regex("[^0-9A-Fa-f]"), "")
             if (clean.length != 12) {
-                return@withContext "MAC-адрес должен состоять из 12 HEX-символов"
+                return@withContext L("MAC-адрес должен состоять из 12 HEX-символов")
             }
             val macBytes = ByteArray(6) { clean.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
             val packet = ByteArray(6 + 16 * 6)
@@ -512,9 +512,9 @@ suspend fun sendMagicPacket(mac: String): String =
                     }
                 }
             }
-            "Сигнал включения отправлен ✔"
+            L("Сигнал включения отправлен ✔")
         } catch (e: Exception) {
-            "Не удалось отправить (${e.javaClass.simpleName})"
+            L("Не удалось отправить (${e.javaClass.simpleName})")
         }
     }
 
@@ -626,7 +626,7 @@ suspend fun syncPendingMedia(
                 val itemUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
                 withContext(Dispatchers.Main) {
-                    onStatus("Отправляю фото $name на ПК…")
+                    onStatus(L("Отправляю фото $name на ПК…"))
                 }
 
                 val ok = uploadMediaFile(context, host, token, itemUri, name, size)
@@ -639,7 +639,7 @@ suspend fun syncPendingMedia(
         }
         if (uploadedCount > 0) {
             withContext(Dispatchers.Main) {
-                onStatus("Отправлено новых фото: $uploadedCount ✔")
+                onStatus(L("Отправлено новых фото: $uploadedCount ✔"))
             }
         }
         uploadedCount
@@ -650,7 +650,7 @@ suspend fun syncPendingMedia(
 
 suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
     if (host.isBlank()) {
-        return@withContext PairResult(false, "", "Сначала укажите адрес ПК или нажмите «Найти ПК в Wi-Fi»")
+        return@withContext PairResult(false, "", L("Сначала укажите адрес ПК или нажмите «Найти ПК в Wi-Fi»"))
     }
     try {
         val targetUrl = buildPcUrl(host, "/api/pair")
@@ -665,25 +665,25 @@ suspend fun pairWithPc(host: String): PairResult = withContext(Dispatchers.IO) {
         if (code == 200) {
             val json = JSONObject(text)
             val tok = json.optString("token", "")
-            val pc = json.optString("pc", "ПК")
+            val pc = json.optString("pc", L("ПК"))
             if (tok.isNotBlank()) {
-                PairResult(true, tok, "Токен и MAC получены от $pc ✔", json.optString("mac", ""), json.optString("tunnel", ""), json.optString("tailscale", ""))
+                PairResult(true, tok, L("Токен и MAC получены от $pc ✔"), json.optString("mac", ""), json.optString("tunnel", ""), json.optString("tailscale", ""))
             } else {
-                PairResult(false, "", "ПК ответил, но токен пустой")
+                PairResult(false, "", L("ПК ответил, но токен пустой"))
             }
         } else if (code == 403) {
             val serverMsg = try { JSONObject(text).optString("message", "") } catch (_: Exception) { "" }
-            PairResult(false, "", serverMsg.ifBlank { "ПК отклонил запрос: разрешено только в домашней сети Wi-Fi" })
+            PairResult(false, "", serverMsg.ifBlank { L("ПК отклонил запрос: разрешено только в домашней сети Wi-Fi") })
         } else {
-            PairResult(false, "", "Ошибка ПК: HTTP $code ($text)")
+            PairResult(false, "", L("Ошибка ПК: HTTP $code ($text)"))
         }
     } catch (e: Exception) {
-        PairResult(false, "", "Не удалось связаться с ПК: ${e.message ?: "таймаут"}")
+        PairResult(false, "", L("Не удалось связаться с ПК: ${e.message ?: L("таймаут")}"))
     }
 }
 
 suspend fun getTunnelStatus(host: String, token: String): TunnelStatus = withContext(Dispatchers.IO) {
-    if (host.isBlank()) return@withContext TunnelStatus(false, "", false, "Адрес ПК не указан")
+    if (host.isBlank()) return@withContext TunnelStatus(false, "", false, L("Адрес ПК не указан"))
     val r = http(host, token, "/api/tunnel", "GET", timeoutMs = 3000)
     if (r.code == 200) {
         try {
@@ -695,7 +695,7 @@ suspend fun getTunnelStatus(host: String, token: String): TunnelStatus = withCon
                 tailscale = o.optString("tailscale", "")
             )
         } catch (e: Exception) {
-            TunnelStatus(false, "", false, "Ошибка ответа: ${e.message}")
+            TunnelStatus(false, "", false, L("Ошибка ответа: ${e.message}"))
         }
     } else {
         TunnelStatus(false, "", false, "HTTP ${r.code}")

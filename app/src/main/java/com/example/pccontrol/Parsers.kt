@@ -19,7 +19,7 @@ fun getInstalledVersionCode(context: Context): Long =
 
 fun getInstalledVersionName(context: Context): String =
     try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "6.7"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "7.0"
     } catch (_: Exception) {
         "0.0"
     }
@@ -184,18 +184,18 @@ fun streamViewLayer(v: FloatArray, f: FloatArray): FloatArray {
 fun friendlyNetError(raw: String?): String {
     val m = (raw ?: "").lowercase()
     return when {
-        m.isBlank() -> "нет связи с ПК"
-        "failed to connect" in m || "econnrefused" in m || "connection refused" in m -> "ПК не отвечает (выключен, спит или нет сети)"
-        "unexpected end of stream" in m || "connection reset" in m || "software caused connection abort" in m || "broken pipe" in m -> "связь с ПК оборвалась"
-        "timed out" in m || "timeout" in m -> "ПК слишком долго не отвечает"
-        "cancelled" in m || "canceled" in m -> "запрос отменён"
-        "unable to resolve host" in m || "unknownhost" in m -> "не удалось найти адрес ПК"
-        "network is unreachable" in m || "enetunreach" in m -> "нет сети на телефоне"
-        else -> raw ?: "ошибка сети"
+        m.isBlank() -> L("нет связи с ПК")
+        "failed to connect" in m || "econnrefused" in m || "connection refused" in m -> L("ПК не отвечает (выключен, спит или нет сети)")
+        "unexpected end of stream" in m || "connection reset" in m || "software caused connection abort" in m || "broken pipe" in m -> L("связь с ПК оборвалась")
+        "timed out" in m || "timeout" in m -> L("ПК слишком долго не отвечает")
+        "cancelled" in m || "canceled" in m -> L("запрос отменён")
+        "unable to resolve host" in m || "unknownhost" in m -> L("не удалось найти адрес ПК")
+        "network is unreachable" in m || "enetunreach" in m -> L("нет сети на телефоне")
+        else -> raw ?: L("ошибка сети")
     }
 }
 
 /** Размер в МБ (или КБ для маленьких файлов) для строки прогресса. */
 fun formatMb(bytes: Long): String =
-    if (bytes >= 1024 * 1024) String.format(java.util.Locale.US, "%.1f МБ", bytes / 1048576.0)
-    else String.format(java.util.Locale.US, "%d КБ", bytes / 1024)
+    if (bytes >= 1024 * 1024) String.format(java.util.Locale.US, L("%.1f МБ"), bytes / 1048576.0)
+    else String.format(java.util.Locale.US, L("%d КБ"), bytes / 1024)

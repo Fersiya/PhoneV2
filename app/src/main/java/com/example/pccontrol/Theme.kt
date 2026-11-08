@@ -71,13 +71,13 @@ private fun darkTheme(
 
 /** Доступные темы: id, название, схема. Выбор хранится в настройках приложения. */
 val AppThemes: List<Triple<String, String, ColorScheme>> = listOf(
-    Triple("cyber", "Кибер", CyberDarkPalette),
-    Triple("sunset", "Закат", darkTheme(0xFFFF9F43, 0xFF2B1600, 0xFFFF6B8B, 0xFF140E0C, 0xFF211815, 0xFF2E221D, 0xFF4A3329)),
-    Triple("forest", "Лес", darkTheme(0xFF6EE7A0, 0xFF03210F, 0xFFD9F36B, 0xFF0A120D, 0xFF121D16, 0xFF1B2A20, 0xFF2C4434)),
-    Triple("ocean", "Океан", darkTheme(0xFF5AA9FF, 0xFF00192E, 0xFF7CE0E8, 0xFF080F1A, 0xFF0F1A2B, 0xFF182740, 0xFF2A4166)),
-    Triple("grape", "Виноград", darkTheme(0xFFC792FF, 0xFF220A40, 0xFFFF8AD8, 0xFF100B18, 0xFF1A1326, 0xFF261C38, 0xFF3F2E5E)),
+    Triple("cyber", L("Кибер"), CyberDarkPalette),
+    Triple("sunset", L("Закат"), darkTheme(0xFFFF9F43, 0xFF2B1600, 0xFFFF6B8B, 0xFF140E0C, 0xFF211815, 0xFF2E221D, 0xFF4A3329)),
+    Triple("forest", L("Лес"), darkTheme(0xFF6EE7A0, 0xFF03210F, 0xFFD9F36B, 0xFF0A120D, 0xFF121D16, 0xFF1B2A20, 0xFF2C4434)),
+    Triple("ocean", L("Океан"), darkTheme(0xFF5AA9FF, 0xFF00192E, 0xFF7CE0E8, 0xFF080F1A, 0xFF0F1A2B, 0xFF182740, 0xFF2A4166)),
+    Triple("grape", L("Виноград"), darkTheme(0xFFC792FF, 0xFF220A40, 0xFFFF8AD8, 0xFF100B18, 0xFF1A1326, 0xFF261C38, 0xFF3F2E5E)),
     Triple(
-        "light", "Светлая",
+        "light", L("Светлая"),
         lightColorScheme(
             primary = Color(0xFF0B6BCB), onPrimary = Color.White,
             primaryContainer = Color(0xFFD6E8FB), onPrimaryContainer = Color(0xFF062B52),

@@ -129,14 +129,14 @@ fun AddProfileDialog(ui: PcState) {
     if (showAddProfileDialog) {
         AlertDialog(
             onDismissRequest = { showAddProfileDialog = false },
-            title = { Text("Новый компьютер") },
+            title = { Text(L("Новый компьютер")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Текущие параметры подключения будут сохранены как новый профиль ПК.", fontSize = 13.sp)
+                    Text(L("Текущие параметры подключения будут сохранены как новый профиль ПК."), fontSize = 13.sp)
                     OutlinedTextField(
                         value = newProfileName,
                         onValueChange = { newProfileName = it },
-                        label = { Text("Имя ПК (например: Ноутбук, Дача)") },
+                        label = { Text(L("Имя ПК (например: Ноутбук, Дача)")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -145,7 +145,7 @@ fun AddProfileDialog(ui: PcState) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val name = newProfileName.trim().ifEmpty { "ПК ${profiles.size + 1}" }
+                        val name = newProfileName.trim().ifEmpty { L("ПК ${profiles.size + 1}") }
                         val newProf = PcProfile(
                             id = System.currentTimeMillis().toString(),
                             name = name,
@@ -169,12 +169,12 @@ fun AddProfileDialog(ui: PcState) {
                         prefs.edit().putString("saved_profiles_json", arr.toString()).apply()
                         showAddProfileDialog = false
                         newProfileName = ""
-                        status = "Профиль $name добавлен ✔"
+                        status = L("Профиль $name добавлен ✔")
                     }
-                ) { Text("Сохранить") }
+                ) { Text(L("Сохранить")) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddProfileDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showAddProfileDialog = false }) { Text(L("Отмена")) }
             }
         )
     }
@@ -220,7 +220,7 @@ fun FullscreenStream(ui: PcState) {
             if (currentBmp != null) {
                 Image(
                     bitmap = currentBmp,
-                    contentDescription = "Полный экран",
+                    contentDescription = L("Полный экран"),
                     contentScale = ContentScale.Fit,
                     filterQuality = FilterQuality.Low,
                     modifier = Modifier
@@ -302,7 +302,7 @@ fun FullscreenStream(ui: PcState) {
                         }
                 )
             } else {
-                Text("Ожидание видеопотока…", color = Color.White, modifier = Modifier.align(Alignment.Center))
+                Text(L("Ожидание видеопотока…"), color = Color.White, modifier = Modifier.align(Alignment.Center))
             }
             }
 
@@ -354,7 +354,7 @@ fun FullscreenStream(ui: PcState) {
                                     OutlinedTextField(
                                         value = textToType,
                                         onValueChange = { textToType = it },
-                                        placeholder = { Text("Печать на ПК", fontSize = 12.sp) },
+                                        placeholder = { Text(L("Печать на ПК"), fontSize = 12.sp) },
                                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Color.White),
                                         singleLine = true,
                                         shape = RoundedCornerShape(12.dp),
@@ -373,7 +373,7 @@ fun FullscreenStream(ui: PcState) {
                                     listOf(
                                         "Esc" to "/media/key_esc", "Win+D" to "/media/win_d", "Ctrl+C" to "/media/ctrl_c",
                                         "Ctrl+V" to "/media/ctrl_v", "Ctrl+Z" to "/media/ctrl_z", "Alt+F4" to "/media/alt_f4",
-                                        "Диспетчер" to "/media/task_mgr"
+                                        L("Диспетчер") to "/media/task_mgr"
                                     ).forEach { (label, path) ->
                                         OutlinedButton(
                                             onClick = { run(path, refreshAfter = false) },
@@ -385,7 +385,7 @@ fun FullscreenStream(ui: PcState) {
                                         onClick = { sendPhoneClipboardToPc() },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                         shape = RoundedCornerShape(10.dp)
-                                    ) { Text("📋→ПК", fontSize = 11.sp) }
+                                    ) { Text(L("📋→ПК"), fontSize = 11.sp) }
                                     OutlinedButton(
                                         onClick = { captureScreenshotToPhone() },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -403,10 +403,10 @@ fun FullscreenStream(ui: PcState) {
                                     shape = RoundedCornerShape(12.dp),
                                     colors = if (isFsMouseMode) ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)) else ButtonDefaults.outlinedButtonColors()
                                 ) {
-                                    Text(if (isFsMouseMode) "🎯 Мышь" else "✋ Обзор", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isFsMouseMode) MaterialTheme.colorScheme.primary else Color.White)
+                                    Text(if (isFsMouseMode) L("🎯 Мышь") else L("✋ Обзор"), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isFsMouseMode) MaterialTheme.colorScheme.primary else Color.White)
                                 }
-                                OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("ЛКМ", fontSize = 11.sp) }
-                                OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text("ПКМ", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { sendMouseAction("left") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text(L("ЛКМ"), fontSize = 11.sp) }
+                                OutlinedButton(onClick = { sendMouseAction("right") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp), shape = RoundedCornerShape(10.dp)) { Text(L("ПКМ"), fontSize = 11.sp) }
                                 HoldScrollButton("⬆") { sendMouseAction("scroll", dy = 3) }
                                 HoldScrollButton("⬇") { sendMouseAction("scroll", dy = -3) }
                                 OutlinedButton(onClick = {
@@ -490,27 +490,27 @@ fun PendingDialog(ui: PcState) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (timerAction == null) {
-                        Text("Команда будет выполнена на ПК немедленно.")
+                        Text(L("Команда будет выполнена на ПК немедленно."))
                     } else {
                         Button(
                             onClick = { pending = null; run(path) },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("Сейчас", fontWeight = FontWeight.Bold) }
-                        Text("или через:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        ) { Text(L("Сейчас"), fontWeight = FontWeight.Bold) }
+                        Text(L("или через:"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(15, 30, 45, 60, 90, 120).forEach { m ->
                                 FilterChip(
                                     selected = minutes == m,
                                     onClick = { timerMinutesInput = m.toString() },
-                                    label = { Text("$m мин") }
+                                    label = { Text(L("$m мин")) }
                                 )
                             }
                         }
                         OutlinedTextField(
                             value = timerMinutesInput,
                             onValueChange = { timerMinutesInput = it.filter { ch -> ch.isDigit() }.take(4) },
-                            label = { Text("Свои минуты") },
+                            label = { Text(L("Свои минуты")) },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -520,16 +520,16 @@ fun PendingDialog(ui: PcState) {
             },
             confirmButton = {
                 if (timerAction == null) {
-                    TextButton(onClick = { pending = null; run(path) }) { Text("Да") }
+                    TextButton(onClick = { pending = null; run(path) }) { Text(L("Да")) }
                 } else {
                     TextButton(
                         enabled = minutes > 0,
                         onClick = { pending = null; startCustomTimer(minutes, timerAction) }
-                    ) { Text("⏱ Через $minutes мин") }
+                    ) { Text(L("⏱ Через $minutes мин")) }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pending = null }) { Text("Отмена") }
+                TextButton(onClick = { pending = null }) { Text(L("Отмена")) }
             }
         )
     }

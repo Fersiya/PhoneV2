@@ -30,14 +30,14 @@ data class MacroButton(val id: String, val name: String, val steps: List<MacroSt
 
 /** Что умеет сервер из горячих клавиш (имя действия → подпись). */
 val MacroKeyCatalog: List<Pair<String, String>> = listOf(
-    "alt_tab" to "Alt+Tab (окна)", "win_d" to "Win+D (свернуть всё)", "win_tab" to "Win+Tab (обзор)",
-    "alt_f4" to "Alt+F4 (закрыть окно)", "task_mgr" to "Диспетчер задач",
-    "ctrl_z" to "Ctrl+Z (отмена)", "ctrl_c" to "Ctrl+C", "ctrl_v" to "Ctrl+V",
-    "close_tab" to "Закрыть вкладку", "reopen_tab" to "Вернуть вкладку", "next_tab" to "Следующая вкладка",
-    "key_enter" to "Enter", "key_esc" to "Esc", "key_space" to "Пробел", "key_backspace" to "Backspace",
-    "play_pause" to "Пауза / Play", "next" to "Следующий трек", "prev" to "Предыдущий трек",
-    "vol_up_10" to "Громче +10%", "vol_down_10" to "Тише −10%", "vol_mute" to "Без звука",
-    "yt_fullscreen" to "Полный экран (F)", "audio_output" to "Выбор аудиовыхода"
+    "alt_tab" to L("Alt+Tab (окна)"), "win_d" to L("Win+D (свернуть всё)"), "win_tab" to L("Win+Tab (обзор)"),
+    "alt_f4" to L("Alt+F4 (закрыть окно)"), "task_mgr" to L("Диспетчер задач"),
+    "ctrl_z" to L("Ctrl+Z (отмена)"), "ctrl_c" to "Ctrl+C", "ctrl_v" to "Ctrl+V",
+    "close_tab" to L("Закрыть вкладку"), "reopen_tab" to L("Вернуть вкладку"), "next_tab" to L("Следующая вкладка"),
+    "key_enter" to "Enter", "key_esc" to "Esc", "key_space" to L("Пробел"), "key_backspace" to "Backspace",
+    "play_pause" to L("Пауза / Play"), "next" to L("Следующий трек"), "prev" to L("Предыдущий трек"),
+    "vol_up_10" to L("Громче +10%"), "vol_down_10" to L("Тише −10%"), "vol_mute" to L("Без звука"),
+    "yt_fullscreen" to L("Полный экран (F)"), "audio_output" to L("Выбор аудиовыхода")
 )
 
 fun loadMacros(prefs: SharedPreferences): List<MacroButton> = try {
@@ -70,21 +70,21 @@ fun saveMacros(prefs: SharedPreferences, list: List<MacroButton>) {
 
 /** Выполняет шаги по очереди; при первой ошибке останавливается. */
 fun PcState.runMacro(m: MacroButton) {
-    if (host.isBlank() || token.isBlank()) { status = "Сначала подключитесь к ПК"; return }
+    if (host.isBlank() || token.isBlank()) { status = L("Сначала подключитесь к ПК"); return }
     triggerHapticClick()
     scope.launch {
         for ((i, s) in m.steps.withIndex()) {
-            status = "«${m.name}»: шаг ${i + 1}/${m.steps.size}"
+            status = L("«${m.name}»: шаг ${i + 1}/${m.steps.size}")
             val res = when (s.kind) {
                 "key" -> command(host.trim(), token.trim(), "/media/${s.value}", "POST")
                 "app" -> command(host.trim(), token.trim(), "/apps/${s.value}/launch", "POST")
                 "text" -> command(host.trim(), token.trim(), "/type", "POST", JSONObject().apply { put("text", s.value); put("enter", false) }.toString())
-                "wait" -> { delay(s.value.toLongOrNull() ?: 500L); "Готово ✔" }
-                else -> "Готово ✔"
+                "wait" -> { delay(s.value.toLongOrNull() ?: 500L); L("Готово ✔") }
+                else -> L("Готово ✔")
             }
-            if (res != "Готово ✔") { status = "«${m.name}»: шаг ${i + 1} — $res"; return@launch }
+            if (res != L("Готово ✔")) { status = L("«${m.name}»: шаг ${i + 1} — $res"); return@launch }
         }
-        status = "«${m.name}» выполнено ✔"
+        status = L("«${m.name}» выполнено ✔")
     }
 }
 
@@ -98,15 +98,15 @@ fun ColumnScope.MacroCard(ui: PcState) {
         OutlinedCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().appear(140)) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("⭐ Мои кнопки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(L("⭐ Мои кнопки"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     FilledTonalButton(
                         onClick = { editing = MacroButton("m" + System.currentTimeMillis(), "", emptyList()) },
                         contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)
-                    ) { Text("＋ Новая") }
+                    ) { Text(L("＋ Новая")) }
                 }
                 if (macros.isEmpty()) {
                     Text(
-                        "Собери свою кнопку из шагов: горячие клавиши, запуск программы, текст, пауза. Нажатие выполняет все шаги по порядку, долгое нажатие — правка.",
+                        L("Собери свою кнопку из шагов: горячие клавиши, запуск программы, текст, пауза. Нажатие выполняет все шаги по порядку, долгое нажатие — правка."),
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -126,7 +126,7 @@ fun ColumnScope.MacroCard(ui: PcState) {
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(m.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text("${m.steps.size} шаг.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(L("${m.steps.size} шаг."), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -164,12 +164,12 @@ private fun MacroEditor(ui: PcState, initial: MacroButton, isNew: Boolean, onSav
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "Новая кнопка" else "Правка кнопки") },
+        title = { Text(if (isNew) L("Новая кнопка") else L("Правка кнопки")) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { if (it.length <= 24) name = it }, label = { Text("Название") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Text("Шаги (${steps.size}):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (steps.isEmpty()) Text("Пока пусто — добавь шаги ниже", fontSize = 12.sp)
+                OutlinedTextField(value = name, onValueChange = { if (it.length <= 24) name = it }, label = { Text(L("Название")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text(L("Шаги (${steps.size}):"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (steps.isEmpty()) Text(L("Пока пусто — добавь шаги ниже"), fontSize = 12.sp)
                 steps.forEachIndexed { i, s ->
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("${i + 1}. ${s.label}", fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -178,7 +178,7 @@ private fun MacroEditor(ui: PcState, initial: MacroButton, isNew: Boolean, onSav
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     Box(Modifier.weight(1f)) {
-                        OutlinedButton(onClick = { keyMenu = true }, contentPadding = KeyPadding, modifier = Modifier.fillMaxWidth()) { Text("⌨ Клавиша", fontSize = 12.sp) }
+                        OutlinedButton(onClick = { keyMenu = true }, contentPadding = KeyPadding, modifier = Modifier.fillMaxWidth()) { Text(L("⌨ Клавиша"), fontSize = 12.sp) }
                         DropdownMenu(expanded = keyMenu, onDismissRequest = { keyMenu = false }) {
                             MacroKeyCatalog.forEach { (k, label) ->
                                 DropdownMenuItem(text = { Text(label) }, onClick = { steps = steps + MacroStep("key", k, label); keyMenu = false })
@@ -186,31 +186,31 @@ private fun MacroEditor(ui: PcState, initial: MacroButton, isNew: Boolean, onSav
                         }
                     }
                     Box(Modifier.weight(1f)) {
-                        OutlinedButton(onClick = { appMenu = true }, contentPadding = KeyPadding, modifier = Modifier.fillMaxWidth()) { Text("🚀 Программа", fontSize = 12.sp) }
+                        OutlinedButton(onClick = { appMenu = true }, contentPadding = KeyPadding, modifier = Modifier.fillMaxWidth()) { Text(L("🚀 Программа"), fontSize = 12.sp) }
                         DropdownMenu(expanded = appMenu, onDismissRequest = { appMenu = false }) {
-                            if (ui.apps.isEmpty()) DropdownMenuItem(text = { Text("Список программ пуст") }, onClick = { appMenu = false })
+                            if (ui.apps.isEmpty()) DropdownMenuItem(text = { Text(L("Список программ пуст")) }, onClick = { appMenu = false })
                             ui.apps.forEach { a ->
-                                DropdownMenuItem(text = { Text(a.title) }, onClick = { steps = steps + MacroStep("app", a.id, "Запуск: ${a.title}"); appMenu = false })
+                                DropdownMenuItem(text = { Text(a.title) }, onClick = { steps = steps + MacroStep("app", a.id, L("Запуск: ${a.title}")); appMenu = false })
                             }
                         }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = { showText = !showText }, contentPadding = KeyPadding, modifier = Modifier.weight(1f)) { Text("✍ Текст", fontSize = 12.sp) }
+                    OutlinedButton(onClick = { showText = !showText }, contentPadding = KeyPadding, modifier = Modifier.weight(1f)) { Text(L("✍ Текст"), fontSize = 12.sp) }
                     Box(Modifier.weight(1f)) {
-                        OutlinedButton(onClick = { waitMenu = true }, contentPadding = KeyPadding, modifier = Modifier.fillMaxWidth()) { Text("⏱ Пауза", fontSize = 12.sp) }
+                        OutlinedButton(onClick = { waitMenu = true }, contentPadding = KeyPadding, modifier = Modifier.fillMaxWidth()) { Text(L("⏱ Пауза"), fontSize = 12.sp) }
                         DropdownMenu(expanded = waitMenu, onDismissRequest = { waitMenu = false }) {
-                            listOf(500L to "0,5 с", 1000L to "1 с", 2000L to "2 с", 5000L to "5 с").forEach { (ms, l) ->
-                                DropdownMenuItem(text = { Text(l) }, onClick = { steps = steps + MacroStep("wait", ms.toString(), "Пауза $l"); waitMenu = false })
+                            listOf(500L to L("0,5 с"), 1000L to L("1 с"), 2000L to L("2 с"), 5000L to L("5 с")).forEach { (ms, l) ->
+                                DropdownMenuItem(text = { Text(l) }, onClick = { steps = steps + MacroStep("wait", ms.toString(), L("Пауза $l")); waitMenu = false })
                             }
                         }
                     }
                 }
                 if (showText) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedTextField(value = textInput, onValueChange = { textInput = it }, label = { Text("Печать на ПК") }, singleLine = true, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = textInput, onValueChange = { textInput = it }, label = { Text(L("Печать на ПК")) }, singleLine = true, modifier = Modifier.weight(1f))
                         FilledTonalButton(onClick = {
-                            if (textInput.isNotBlank()) { steps = steps + MacroStep("text", textInput, "Текст: ${textInput.take(20)}"); textInput = ""; showText = false }
+                            if (textInput.isNotBlank()) { steps = steps + MacroStep("text", textInput, L("Текст: ${textInput.take(20)}")); textInput = ""; showText = false }
                         }, contentPadding = KeyPadding) { Text("＋") }
                     }
                 }
@@ -220,12 +220,12 @@ private fun MacroEditor(ui: PcState, initial: MacroButton, isNew: Boolean, onSav
             TextButton(
                 enabled = name.isNotBlank() && steps.isNotEmpty(),
                 onClick = { onSave(initial.copy(name = name.trim(), steps = steps)) }
-            ) { Text("Сохранить") }
+            ) { Text(L("Сохранить")) }
         },
         dismissButton = {
             Row {
-                if (!isNew) TextButton(onClick = onDelete) { Text("Удалить") }
-                TextButton(onClick = onDismiss) { Text("Отмена") }
+                if (!isNew) TextButton(onClick = onDelete) { Text(L("Удалить")) }
+                TextButton(onClick = onDismiss) { Text(L("Отмена")) }
             }
         }
     )

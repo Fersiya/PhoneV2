@@ -135,7 +135,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Программы (${apps.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(L("Программы (${apps.size})"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             }
                             Text(if (isProgramsExpanded) "▲" else "▼", fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                         }
@@ -143,7 +143,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                         AnimatedVisibility(visible = isProgramsExpanded) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (apps.isEmpty()) {
-                                    Text("Список программ пуст. Добавьте из списка открытых окон ниже.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(L("Список программ пуст. Добавьте из списка открытых окон ниже."), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 DetectedAppsButton(ui)
                                 apps.forEach { app ->
@@ -155,10 +155,10 @@ fun ColumnScope.AppsTab(ui: PcState) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(app.title, style = MaterialTheme.typography.bodyLarge)
                                             if (app.running) {
-                                                Text("работает", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                                Text(L("работает"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                             }
                                         }
-                                        Button(onClick = { run("/apps/${app.id}/launch") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Пуск") }
+                                        Button(onClick = { run("/apps/${app.id}/launch") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text(L("Пуск")) }
                                         if (app.canClose) {
                                             OutlinedButton(onClick = { run("/apps/${app.id}/close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
                                         }
@@ -177,7 +177,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Открытые окна (${openWindows.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(L("Открытые окна (${openWindows.size})"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { scope.launch { refresh() } }, contentPadding = KeyPadding, shape = RoundedCornerShape(10.dp)) {
                                     Text("🔄", fontSize = 12.sp)
@@ -189,7 +189,7 @@ fun ColumnScope.AppsTab(ui: PcState) {
                         AnimatedVisibility(visible = isWindowsExpanded) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (openWindows.isEmpty()) {
-                                    Text("Окна не найдены или список обновляется…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(L("Окна не найдены или список обновляется…"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 openWindows.forEach { win ->
                                     Row(
@@ -204,12 +204,12 @@ fun ColumnScope.AppsTab(ui: PcState) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(win.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                             Text(
-                                                if (win.active) "${win.process} • активно" else win.process,
+                                                if (win.active) L("${win.process} • активно") else win.process,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = if (win.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("Экран") }
+                                        Button(onClick = { sendWindowAction(win.hwnd, "focus") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text(L("Экран")) }
                                         OutlinedButton(onClick = { quickAddAppFromWindow(win) }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("＋") }
                                         OutlinedButton(onClick = { sendWindowAction(win.hwnd, "close") }, contentPadding = KeyPadding, shape = RoundedCornerShape(8.dp)) { Text("✕") }
                                     }

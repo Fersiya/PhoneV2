@@ -198,10 +198,10 @@ class PcState(
                     PcProfile(o.getString("id"), o.getString("name"), o.getString("host"), o.getString("token"), o.getString("mac"))
                 }
             } catch (_: Exception) {
-                listOf(PcProfile("1", "Основной ПК", prefs.getString("host", "") ?: "", prefs.getString("token", "") ?: "", prefs.getString("mac", "") ?: ""))
+                listOf(PcProfile("1", L("Основной ПК"), prefs.getString("host", "") ?: "", prefs.getString("token", "") ?: "", prefs.getString("mac", "") ?: ""))
             }
         } else {
-            listOf(PcProfile("1", "Основной ПК", prefs.getString("host", "") ?: "", prefs.getString("token", "") ?: "", prefs.getString("mac", "") ?: ""))
+            listOf(PcProfile("1", L("Основной ПК"), prefs.getString("host", "") ?: "", prefs.getString("token", "") ?: "", prefs.getString("mac", "") ?: ""))
         }
     }
     var profiles by run { mutableStateOf(initialProfiles) }
@@ -348,7 +348,7 @@ class PcState(
     fun wake() {
         triggerHapticHeavy()
         save()
-        status = "Отправляю сигнал WoL…"
+        status = L("Отправляю сигнал WoL…")
         scope.launch { status = sendMagicPacket(mac) }
     }
 
@@ -384,12 +384,12 @@ class PcState(
             } else if (r.code == 401) {
                 pcOnline = true
                 tokenError = true
-                status = "🔑 Ошибка: токен не совпадает с config.json на ПК!"
+                status = L("🔑 Ошибка: токен не совпадает с config.json на ПК!")
                 apps = emptyList()
             } else {
                 pcOnline = false
                 tokenError = false
-                status = "Ответ ПК: HTTP ${r.code}"
+                status = L("Ответ ПК: HTTP ${r.code}")
                 apps = emptyList()
             }
             if (currentTab == NavTab.APPS && r.code == 200) {
@@ -400,14 +400,14 @@ class PcState(
             pcOnline = false
             tokenError = false
             apps = emptyList()
-            status = "Нет связи: ${friendlyNetError(e.localizedMessage ?: e.javaClass.simpleName)}"
+            status = L("Нет связи: ${friendlyNetError(e.localizedMessage ?: e.javaClass.simpleName)}")
         }
     }
 
     fun run(path: String, method: String = "POST", bodyText: String? = null, refreshAfter: Boolean = true) {
         triggerHapticClick()
         save()
-        status = "Отправляю…"
+        status = L("Отправляю…")
         scope.launch {
             status = command(host.trim(), token.trim(), path, method, bodyText)
             if (refreshAfter) {
@@ -482,7 +482,7 @@ class PcState(
 
     fun captureScreenshotToPhone() {
         if (host.isBlank() || token.isBlank()) return
-        status = "Делаю скриншот экрана ПК…"
+        status = L("Делаю скриншот экрана ПК…")
         scope.launch(Dispatchers.IO) {
             try {
                 val url = URL(buildPcUrl(host, "/screen?w=1920&q=92"))
@@ -508,16 +508,16 @@ class PcState(
                         }
                     }
                     withContext(Dispatchers.Main) {
-                        status = "Скриншот экрана ПК сохранён в Галерею 📸 ✔"
+                        status = L("Скриншот экрана ПК сохранён в Галерею 📸 ✔")
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        status = "Не удалось сделать скриншот: HTTP ${conn.responseCode}"
+                        status = L("Не удалось сделать скриншот: HTTP ${conn.responseCode}")
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    status = "Ошибка снимка: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                    status = L("Ошибка снимка: ${e.localizedMessage ?: e.javaClass.simpleName}")
                 }
             }
         }
@@ -528,19 +528,19 @@ class PcState(
 
     fun runDiagnostics() {
         if (host.isBlank()) {
-            diagnosticsReport = "⚠️ Укажите адрес ПК для проверки связи."
+            diagnosticsReport = L("⚠️ Укажите адрес ПК для проверки связи.")
             return
         }
         isDiagnosing = true
-        diagnosticsReport = "🩺 Проверяю связь с ПК…"
+        diagnosticsReport = L("🩺 Проверяю связь с ПК…")
         scope.launch(Dispatchers.IO) {
             val sb = StringBuilder()
-            sb.appendLine("=== РЕЗУЛЬТАТ ДИАГНОСТИКИ СВЯЗИ ===")
-            sb.appendLine("• Проверяемый адрес: $host")
+            sb.appendLine(L("=== РЕЗУЛЬТАТ ДИАГНОСТИКИ СВЯЗИ ==="))
+            sb.appendLine(L("• Проверяемый адрес: $host"))
             val t0 = System.currentTimeMillis()
             try {
                 val pingUrl = buildPcUrl(host, "/ping")
-                sb.appendLine("• Запрос к шлюзу: $pingUrl")
+                sb.appendLine(L("• Запрос к шлюзу: $pingUrl"))
                 val conn = URL(pingUrl).openConnection() as HttpURLConnection
                 conn.connectTimeout = 6000
                 conn.readTimeout = 6000
@@ -549,82 +549,82 @@ class PcState(
                 conn.setRequestProperty("X-Token", safeTok)
                 val code = conn.responseCode
                 val elapsed = System.currentTimeMillis() - t0
-                sb.appendLine("• Ответ сервера: HTTP $code (время: ${elapsed} мс)")
+                sb.appendLine(L("• Ответ сервера: HTTP $code (время: ${elapsed} мс)"))
 
                 if (code == 200) {
                     val raw = conn.inputStream.bufferedReader().use { it.readText() }
                     try {
                         val json = JSONObject(raw)
                         val authOk = json.optBoolean("authorized", false)
-                        val pc = json.optString("pc", "ПК")
-                        sb.appendLine("• Имя компьютера: $pc")
+                        val pc = json.optString("pc", L("ПК"))
+                        sb.appendLine(L("• Имя компьютера: $pc"))
                         if (authOk) {
-                            sb.appendLine("✅ УСПЕХ: Связь установлена, секретный токен ВЕРНЫЙ!")
+                            sb.appendLine(L("✅ УСПЕХ: Связь установлена, секретный токен ВЕРНЫЙ!"))
                             withContext(Dispatchers.Main) {
                                 pcOnline = true
                                 tokenError = false
-                                status = "ПК ($pc) на связи ✔ (${elapsed} мс)"
+                                status = L("ПК ($pc) на связи ✔ (${elapsed} мс)")
                                 scope.launch { refresh() }
                             }
                         } else {
-                            sb.appendLine("🔑 ОШИБКА АВТОРИЗАЦИИ: Компьютер доступен, но введён неверный токен!")
-                            sb.appendLine("👉 Откройте server.py или config.json на ПК и скопируйте токен оттуда.")
+                            sb.appendLine(L("🔑 ОШИБКА АВТОРИЗАЦИИ: Компьютер доступен, но введён неверный токен!"))
+                            sb.appendLine(L("👉 Откройте server.py или config.json на ПК и скопируйте токен оттуда."))
                             withContext(Dispatchers.Main) {
                                 pcOnline = true
                                 tokenError = true
-                                status = "🔑 Неверный токен ПК! Проверьте в config.json"
+                                status = L("🔑 Неверный токен ПК! Проверьте в config.json")
                             }
                         }
                     } catch (_: Exception) {
-                        sb.appendLine("✅ Сервер ответил 'pong' (связь есть)")
+                        sb.appendLine(L("✅ Сервер ответил 'pong' (связь есть)"))
                         withContext(Dispatchers.Main) {
                             pcOnline = true
                             scope.launch { refresh() }
                         }
                     }
                 } else if (code == 401) {
-                    sb.appendLine("🔑 ОШИБКА 401: Сервер найден, но токен подключения НЕВЕРЕН!")
-                    sb.appendLine("👉 Скопируйте токен из config.json на ПК в настройки приложения.")
+                    sb.appendLine(L("🔑 ОШИБКА 401: Сервер найден, но токен подключения НЕВЕРЕН!"))
+                    sb.appendLine(L("👉 Скопируйте токен из config.json на ПК в настройки приложения."))
                     withContext(Dispatchers.Main) {
                         pcOnline = true
                         tokenError = true
-                        status = "🔑 Токен не совпадает с config.json на ПК"
+                        status = L("🔑 Токен не совпадает с config.json на ПК")
                     }
                 } else {
-                    sb.appendLine("⚠️ Неожиданный ответ сервера: HTTP $code")
+                    sb.appendLine(L("⚠️ Неожиданный ответ сервера: HTTP $code"))
                 }
                 conn.disconnect()
             } catch (e: Exception) {
                 val elapsed = System.currentTimeMillis() - t0
-                sb.appendLine("❌ СБОЙ ПОДКЛЮЧЕНИЯ (${elapsed} мс): ${e.localizedMessage ?: e.javaClass.simpleName}")
+                sb.appendLine(L("❌ СБОЙ ПОДКЛЮЧЕНИЯ (${elapsed} мс): ${e.localizedMessage ?: e.javaClass.simpleName}"))
             }
             // Проверка обоих маршрутов и подсказки по сети
             sb.appendLine()
-            sb.appendLine("=== МАРШРУТЫ ===")
+            sb.appendLine(L("=== МАРШРУТЫ ==="))
             try {
                 val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
                 val caps = cm.getNetworkCapabilities(cm.activeNetwork)
                 val wifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
                 val vpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
-                sb.appendLine("• Сеть телефона: ${if (wifi) "Wi-Fi" else "мобильный интернет"}${if (vpn) " + включён VPN" else ""}")
-                if (!wifi && connMode == "lan") sb.appendLine("💡 Выбран режим «Дома», а Wi-Fi нет — переключите на «Авто».")
-                if (vpn) sb.appendLine("💡 VPN может не пускать к домашней сети или к Tailscale — попробуйте выключить его.")
+                sb.appendLine(L("• Сеть телефона: ${if (wifi) "Wi-Fi" else L("мобильный интернет")}${if (vpn) L(" + включён VPN") else ""}"))
+                if (!wifi && connMode == "lan") sb.appendLine(L("💡 Выбран режим «Дома», а Wi-Fi нет — переключите на «Авто»."))
+                if (vpn) sb.appendLine(L("💡 VPN может не пускать к домашней сети или к Tailscale — попробуйте выключить его."))
             } catch (_: Exception) {
             }
-            for ((name, addr) in listOf("🏠 Дома" to lanHost.trim(), "🔒 Tailscale" to tsHost.trim())) {
+            for ((name, addr) in listOf(L("🏠 Дома") to lanHost.trim(), "🔒 Tailscale" to tsHost.trim())) {
                 if (addr.isBlank()) {
-                    sb.appendLine("$name: адрес не задан")
+                    sb.appendLine(L("$name: адрес не задан"))
                     continue
                 }
                 val t1 = System.currentTimeMillis()
                 val res = try {
                     val r = http(addr, token.trim(), "/ping", "GET", timeoutMs = 4000)
-                    val note = if (r.code == 200) " ✅" else if (r.code in intArrayOf(502, 530, 1033, 404)) " ❌ туннель на ПК не запущен или адрес устарел" else ""
+                    val note = if (r.code == 200) " ✅" else if (r.code in intArrayOf(502, 530, 1033, 404)) L(" ❌ туннель на ПК не запущен или адрес устарел") else ""
                     "HTTP ${r.code}$note"
                 } catch (e: Exception) {
-                    "❌ нет связи (${e.localizedMessage ?: e.javaClass.simpleName})"
+                    L("❌ нет связи (${e.localizedMessage ?: e.javaClass.simpleName})")
                 }
-                sb.appendLine("$name: $res, ${System.currentTimeMillis() - t1} мс")
+                sb.appendLine(L("$name: $res, ${System.currentTimeMillis() - t1} мс"))
             }
             withContext(Dispatchers.Main) {
                 isDiagnosing = false
@@ -650,7 +650,7 @@ class PcState(
         if (lanOk) {
             routeFailStreak = 0
             host = lan
-            routeLabel = "🏠 Дома (Wi-Fi)"
+            routeLabel = L("🏠 Дома (Wi-Fi)")
             // Дома запоминаем Tailscale-адрес ПК — он понадобится вне дома
             try {
                 val ts = getTunnelStatus(lan, token.trim())
@@ -663,18 +663,18 @@ class PcState(
         } else if (connMode != "lan" && tsHost.isNotBlank() && (pingOk(tsHost.trim(), 3000) || pingOk(tsHost.trim(), 4000))) {
             routeFailStreak = 0
             host = tsHost.trim()
-            routeLabel = "🔒 Через Tailscale"
+            routeLabel = L("🔒 Через Tailscale")
         } else {
             routeFailStreak++
             // Одна неудача — не повод бросать рабочий маршрут: предупреждение только после двух подряд
             if (routeFailStreak >= 2 || routeLabel.isBlank()) {
                 if (connMode != "lan") {
                     if (tsHost.isNotBlank()) host = tsHost.trim()
-                    routeLabel = if (tsHost.isBlank()) "⚠️ Вне дома нужен Tailscale: откройте приложение дома, а на ПК и телефоне включите Tailscale"
-                    else "⚠️ ПК не отвечает по Tailscale — он должен быть включён на телефоне и на ПК"
+                    routeLabel = if (tsHost.isBlank()) L("⚠️ Вне дома нужен Tailscale: откройте приложение дома, а на ПК и телефоне включите Tailscale")
+                    else L("⚠️ ПК не отвечает по Tailscale — он должен быть включён на телефоне и на ПК")
                 } else {
                     if (lan.isNotBlank()) host = lan
-                    routeLabel = "⚠️ ПК не отвечает в Wi-Fi"
+                    routeLabel = L("⚠️ ПК не отвечает в Wi-Fi")
                 }
             }
         }
@@ -683,7 +683,7 @@ class PcState(
 
 
     fun discoverLocalPc() {
-        status = "Поиск ПК в локальной сети Wi-Fi…"
+        status = L("Поиск ПК в локальной сети Wi-Fi…")
         scope.launch(Dispatchers.IO) {
             var found = false
             try {
@@ -701,7 +701,7 @@ class PcState(
                 val replyText = String(replyPacket.data, 0, replyPacket.length, Charsets.UTF_8).trim()
                 if (replyText.startsWith("PC_DISCOVERY_PONG:")) {
                     val parts = replyText.split(":")
-                    val pcName = if (parts.size >= 2) parts[1] else "ПК"
+                    val pcName = if (parts.size >= 2) parts[1] else L("ПК")
                     val foundHost = replyPacket.address.hostAddress ?: ""
                     val pairRes = pairWithPc(foundHost)
                     withContext(Dispatchers.Main) {
@@ -714,8 +714,8 @@ class PcState(
                             if (pairRes.tailscale.isNotBlank()) tsHost = pairRes.tailscale
                         }
                         save()
-                        val tokenNote = if (pairRes.success) " ✔ Токен получен" else " — ${pairRes.message}"
-                        status = "Найден ПК: $pcName ($foundHost)$tokenNote"
+                        val tokenNote = if (pairRes.success) L(" ✔ Токен получен") else " — ${pairRes.message}"
+                        status = L("Найден ПК: $pcName ($foundHost)$tokenNote")
                         scope.launch { refresh() }
                     }
                     found = true
@@ -724,7 +724,7 @@ class PcState(
             } catch (_: Exception) {}
             if (!found) {
                 withContext(Dispatchers.Main) {
-                    status = "ПК в локальной сети не найден. Убедитесь, что на ПК запущен «Пульт ПК» и телефон в той же Wi-Fi сети."
+                    status = L("ПК в локальной сети не найден. Убедитесь, что на ПК запущен «Пульт ПК» и телефон в той же Wi-Fi сети.")
                 }
             }
         }
@@ -745,7 +745,7 @@ class PcState(
                 }
                 context.startActivity(intent)
             } catch (_: Exception) {
-                status = "Файл сохранён в системную папку Загрузки"
+                status = L("Файл сохранён в системную папку Загрузки")
             }
         }
     }
@@ -818,16 +818,16 @@ class PcState(
     fun sendExactVolume(percent: Int) {
         save()
         volumeSlider = percent.toFloat()
-        status = "Громкость: $percent%…"
+        status = L("Громкость: $percent%…")
         scope.launch {
             val res = command(host.trim(), token.trim(), "/volume", "POST", percent.toString())
-            status = if (res == "Готово ✔") "Громкость: $percent% ✔" else res
+            status = if (res == L("Готово ✔")) L("Громкость: $percent% ✔") else res
         }
     }
 
     fun sendTypeText(enter: Boolean) {
         if (textToType.isEmpty() && !enter) {
-            status = "Введи текст"
+            status = L("Введи текст")
             return
         }
         save()
@@ -835,27 +835,27 @@ class PcState(
             put("text", textToType)
             put("enter", enter)
         }.toString()
-        status = "Печатаю на ПК…"
+        status = L("Печатаю на ПК…")
         scope.launch {
             val res = command(host.trim(), token.trim(), "/type", "POST", payload)
-            status = if (res == "Готово ✔") "Текст отправлен ✔" else res
-            if (res == "Готово ✔") textToType = ""
+            status = if (res == L("Готово ✔")) L("Текст отправлен ✔") else res
+            if (res == L("Готово ✔")) textToType = ""
         }
     }
 
     fun sendUrlToPc(urlOrQuery: String) {
         val clean = urlOrQuery.trim()
         if (clean.isEmpty()) {
-            status = "Введи ссылку или поисковый запрос"
+            status = L("Введи ссылку или поисковый запрос")
             return
         }
         save()
         val isSearch = !clean.startsWith("http://") && !clean.startsWith("https://") && (" " in clean || "." !in clean)
-        status = if (isSearch) "Ищу на YouTube…" else "Открываю на ПК…"
+        status = if (isSearch) L("Ищу на YouTube…") else L("Открываю на ПК…")
         scope.launch {
             val res = command(host.trim(), token.trim(), "/open-url", "POST", clean)
-            status = if (res == "Готово ✔") {
-                if (isSearch) "Поиск открыт ✔" else "Открыто на ПК ✔"
+            status = if (res == L("Готово ✔")) {
+                if (isSearch) L("Поиск открыт ✔") else L("Открыто на ПК ✔")
             } else res
             delay(500)
             refresh()
@@ -867,7 +867,7 @@ class PcState(
         val clip = clipboard.primaryClip
         val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0)?.coerceToText(context)?.toString()?.trim() ?: "" else ""
         if (text.isEmpty()) {
-            status = "Буфер обмена пуст"
+            status = L("Буфер обмена пуст")
             return
         }
         val foundUrl = Regex("""https?://\S+""").find(text)?.value
@@ -881,13 +881,13 @@ class PcState(
         val clip = clipboard.primaryClip
         val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0)?.coerceToText(context)?.toString() ?: "" else ""
         if (text.isEmpty()) {
-            status = "Буфер телефона пуст"
+            status = L("Буфер телефона пуст")
             return
         }
         save()
         scope.launch {
             val res = command(host.trim(), token.trim(), "/clipboard", "POST", text)
-            status = if (res == "Готово ✔") "Скопировано на ПК ✔" else res
+            status = if (res == L("Готово ✔")) L("Скопировано на ПК ✔") else res
         }
     }
 
@@ -899,12 +899,12 @@ class PcState(
                 if (r.code == 200 && r.body.isNotEmpty()) {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("PC Clipboard", r.body))
-                    status = "Буфер с ПК получен ✔"
+                    status = L("Буфер с ПК получен ✔")
                 } else {
-                    status = "Буфер ПК пуст"
+                    status = L("Буфер ПК пуст")
                 }
             } catch (_: Exception) {
-                status = "Ошибка чтения буфера ПК"
+                status = L("Ошибка чтения буфера ПК")
             }
         }
     }
@@ -938,13 +938,13 @@ class PcState(
             status = try {
                 val r = http(host.trim(), token.trim(), "/apps/add", "POST", payload)
                 when (r.code) {
-                    200 -> "«$cleanTitle» добавлено в Софт ✔"
-                    409 -> "«$cleanTitle» уже есть в Софте"
-                    401 -> "Неверный токен"
-                    else -> "Не удалось добавить: ${r.body.ifBlank { "ошибка ${r.code}" }}"
+                    200 -> L("«$cleanTitle» добавлено в Софт ✔")
+                    409 -> L("«$cleanTitle» уже есть в Софте")
+                    401 -> L("Неверный токен")
+                    else -> L("Не удалось добавить: ${r.body.ifBlank { L("ошибка ${r.code}") }}")
                 }
             } catch (e: Exception) {
-                "ПК недоступен (${e.javaClass.simpleName})"
+                L("ПК недоступен (${e.javaClass.simpleName})")
             }
             delay(300)
             refresh()
@@ -954,7 +954,7 @@ class PcState(
     fun deleteApp(appId: String) {
         scope.launch {
             val res = command(host.trim(), token.trim(), "/apps/$appId/delete", "POST")
-            status = if (res == "Готово ✔") "Удалено ✔" else res
+            status = if (res == L("Готово ✔")) L("Удалено ✔") else res
             refresh()
         }
     }
@@ -969,7 +969,7 @@ class PcState(
             }
             status = res
             isDownloadingUpdate = false
-            if (res.startsWith("Запуск установщика")) {
+            if (res.startsWith(L("Запуск установщика"))) {
                 otaUpdateInfo = null
             }
         }
@@ -980,7 +980,7 @@ class PcState(
     fun browseFiles(path: String = fileBrowsePath) {
         if (host.isBlank() || token.isBlank()) return
         isBrowsingFiles = true
-        fileBrowseStatus = "Загрузка папки…"
+        fileBrowseStatus = L("Загрузка папки…")
         scope.launch {
             try {
                 val enc = java.net.URLEncoder.encode(path, "UTF-8")
@@ -991,12 +991,12 @@ class PcState(
                     fileBrowseParent = res.parent
                     if (res.drives.isNotEmpty()) fileBrowseDrives = res.drives
                     fileBrowseEntries = res.entries
-                    fileBrowseStatus = "Папка: ${res.path} (${res.entries.size} элементов)"
+                    fileBrowseStatus = L("Папка: ${res.path} (${res.entries.size} элементов)")
                 } else {
-                    fileBrowseStatus = "Ошибка: ${r.code} ${r.body}"
+                    fileBrowseStatus = L("Ошибка: ${r.code} ${r.body}")
                 }
             } catch (e: Exception) {
-                fileBrowseStatus = "Сбой связи: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                fileBrowseStatus = L("Сбой связи: ${e.localizedMessage ?: e.javaClass.simpleName}")
             } finally {
                 isBrowsingFiles = false
             }
@@ -1026,7 +1026,7 @@ class PcState(
     fun downloadFileFromPc(entry: FileEntry) {
         if (host.isBlank() || token.isBlank()) return
         downloadingFiles = downloadingFiles + entry.name
-        status = "Скачиваю ${entry.name}…"
+        status = L("Скачиваю ${entry.name}…")
         scope.launch {
             var savedUri: Uri? = null
             val res = withContext(Dispatchers.IO) {
@@ -1074,13 +1074,13 @@ class PcState(
                             savedUri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
                         }
                         conn.disconnect()
-                        if (savedOk) "Файл ${entry.name} сохранён в Загрузки ✔" else "Не удалось сохранить файл"
+                        if (savedOk) L("Файл ${entry.name} сохранён в Загрузки ✔") else L("Не удалось сохранить файл")
                     } else {
                         conn.disconnect()
-                        "Ошибка скачивания: HTTP ${conn.responseCode}"
+                        L("Ошибка скачивания: HTTP ${conn.responseCode}")
                     }
                 } catch (e: Exception) {
-                    "Ошибка скачивания: ${e.localizedMessage ?: e.javaClass.simpleName}"
+                    L("Ошибка скачивания: ${e.localizedMessage ?: e.javaClass.simpleName}")
                 }
             }
             downloadingFiles = downloadingFiles - entry.name
